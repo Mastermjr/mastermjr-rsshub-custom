@@ -1,0 +1,9 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        docker buildx create --name zstd-builder --driver docker-container --use
+        docker buildx build --push -t gcr.io/$PROJECT_ID/rsshub-custom .
+images: []

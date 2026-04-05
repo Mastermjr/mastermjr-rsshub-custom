@@ -13,7 +13,7 @@ IMAGE="gcr.io/${MY_PROJECT}/rsshub-custom"
 
 echo "Building custom RSSHub image..."
 gcloud builds submit \
-  --tag "${IMAGE}" \
+  --config=cloudbuild.yaml \
   --project "${MY_PROJECT}" \
   --region "${MY_REGION}"
 
@@ -32,4 +32,4 @@ gcloud run deploy "${SERVICE_NAME}" \
 
 echo ""
 echo "Done! Your custom routes are live."
-echo "Test: https://YOUR_DOMAIN/liquidai/blog?key=${MY_ACCESS_KEY}"
+echo "Test with: echo \"https://\$MY_DOMAIN/liquidai/blog?key=\$MY_ACCESS_KEY\""
