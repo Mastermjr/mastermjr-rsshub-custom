@@ -293,9 +293,9 @@ window.selectRoute=function(el){document.querySelectorAll(".rroute.selected").fo
 function renderParamForm(route){if(!route.target||!route.params.length){$("#formArea").innerHTML='<div class="form-route-line">Route: <code>'+esc(route.target||"—")+"</code>"+(route.docs?' · <a href="'+esc(route.docs)+'" target="_blank" rel="noreferrer">Official docs</a>':"")+"</div>";return}
 $("#formArea").innerHTML='<div class="form-grid">'+route.params.map(function(p){return'<div class="form-field"><label>'+esc(p.name)+' <span>('+( p.optional?"optional":"required")+')</span></label><input class="param-input" data-param="'+esc(p.name)+'" placeholder="e.g. …" spellcheck="false"></div>'}).join("")+'</div><div class="form-route-line">Route: <code>'+esc(route.target)+"</code>"+(route.docs?' · <a href="'+esc(route.docs)+'" target="_blank" rel="noreferrer">Official docs</a>':"")+"</div>";
 document.querySelectorAll(".param-input").forEach(function(inp){inp.addEventListener("input",updateGeneratedUrl)})}
-function updateGeneratedUrl(){if(!selectedRoute||!selectedRoute.target){clearGenerated();return}var path=selectedRoute.target;document.querySelectorAll(".param-input").forEach(function(inp){var v=inp.value.trim();if(v)path=path.replace(new RegExp(":"+inp.dataset.param+"\\\\??"),v)});path=path.replace(/\/:[a-zA-Z_]+\?/g,"");if(/:/.test(path)){clearGenerated();return}setGenerated(path)}
-function buildFeedUrl(p){var u=instanceUrl+p;if(accessKey)u+=(u.includes("?")?"&":"?")+"key="+accessKey;return u}
-function setGenerated(path){generatedUrl=buildFeedUrl(path);var box=$("#resultBox");var kh=accessKey?'<span class="hl-key">?key='+esc(accessKey.slice(0,8))+"…</span>":"";box.innerHTML='<span class="hl-domain">'+esc(instanceUrl)+'</span><span class="hl-route">'+esc(path)+"</span>"+kh;box.classList.add("has-url");$("#copyBtn").disabled=false;$("#openBtn").href=generatedUrl}
+function updateGeneratedUrl(){if(!selectedRoute||!selectedRoute.target){clearGenerated();return}var path=selectedRoute.target;if(path.startsWith("http://") || path.startsWith("https://")){setGenerated(path);return}document.querySelectorAll(".param-input").forEach(function(inp){var v=inp.value.trim();if(v)path=path.replace(new RegExp(":"+inp.dataset.param+"\\\\??"),v)});path=path.replace(/\/:[a-zA-Z_]+\?/g,"");if(/:/.test(path)){clearGenerated();return}setGenerated(path)}
+function buildFeedUrl(p){if(p.startsWith("http://") || p.startsWith("https://"))return p;var u=instanceUrl+p;if(accessKey)u+=(u.includes("?")?"&":"?")+"key="+accessKey;return u}
+function setGenerated(path){generatedUrl=buildFeedUrl(path);var box=$("#resultBox");var isNative=path.startsWith("http://") || path.startsWith("https://");if(isNative){box.innerHTML='<span class="hl-route">'+esc(path)+'</span> <span class="hl-key">(native feed)</span>'}else{var kh=accessKey?'<span class="hl-key">?key='+esc(accessKey.slice(0,8))+"…</span>":"";box.innerHTML='<span class="hl-domain">'+esc(instanceUrl)+'</span><span class="hl-route">'+esc(path)+"</span>"+kh}box.classList.add("has-url");$("#copyBtn").disabled=false;$("#openBtn").href=generatedUrl}
 function clearGenerated(){generatedUrl="";$("#resultBox").textContent="—";$("#resultBox").classList.remove("has-url");$("#copyBtn").disabled=true;$("#openBtn").href="#"}
 $("#copyBtn").onclick=async function(){if(!generatedUrl)return;try{await navigator.clipboard.writeText(generatedUrl);var b=$("#copyBtn");b.classList.add("copied");b.textContent="Copied!";setTimeout(function(){b.classList.remove("copied");b.textContent="Copy link"},1400)}catch(e){}};
 $("#advToggle").onchange=function(e){$("#advArea").classList.toggle("visible",e.target.checked)};
@@ -345,11 +345,11 @@ var ROUTE_TABLE = {
     if (!repo) return {target: "/github/starred_repos/" + user, title: "GitHub · " + user + " stars"};
     if (section === "issues") return {target: "/github/issue/" + user + "/" + repo, title: "GitHub Issues · " + user + "/" + repo};
     if (section === "pulls" || section === "pull") return {target: "/github/pull/" + user + "/" + repo, title: "GitHub PRs · " + user + "/" + repo};
-    if (section === "releases") return {target: "/github/release/" + user + "/" + repo, title: "GitHub Releases · " + user + "/" + repo};
-    if (section === "commits") return {target: "/github/commits/" + user + "/" + repo, title: "GitHub Commits · " + user + "/" + repo};
+    if (section === "releases") return {target: "https://github.com/" + user + "/" + repo + "/releases.atom", title: "GitHub Releases · " + user + "/" + repo};
+    if (section === "commits") return {target: "https://github.com/" + user + "/" + repo + "/commits.atom", title: "GitHub Commits · " + user + "/" + repo};
     if (section === "discussions") return {target: "/github/discussion/" + user + "/" + repo, title: "GitHub Discussions · " + user + "/" + repo};
-    // default: repo → issues
-    return {target: "/github/issue/" + user + "/" + repo, title: "GitHub Issues · " + user + "/" + repo};
+    // default: repo → releases atom
+    return {target: "https://github.com/" + user + "/" + repo + "/releases.atom", title: "GitHub Releases · " + user + "/" + repo};
   },
 
   "reddit.com": function(h, p) {
@@ -669,7 +669,7 @@ function debounce(fn,ms){var t;return function(){var a=arguments;clearTimeout(t)
 function getBuiltinRules(){return{
 "medium.com":{_name:"Medium",".":[{title:"User Feed",source:["/@:user","/@:user/:slug"],target:"/medium/feed/:user"}]},
 "youtube.com":{_name:"YouTube",".":[{title:"User Videos",source:["/@:username","/@:username/videos"],target:"/youtube/user/@:username"},{title:"Channel",source:["/channel/:id","/channel/:id/videos"],target:"/youtube/channel/:id"},{title:"Playlist",source:["/playlist"],target:"/youtube/playlist/:id"}]},
-"github.com":{_name:"GitHub",".":[{title:"Repo Issues",source:["/:user/:repo/issues","/:user/:repo/issues/:id","/:user/:repo"],target:"/github/issue/:user/:repo"},{title:"Repo Releases",source:["/:user/:repo/releases"],target:"/github/release/:user/:repo"},{title:"Repo Commits",source:["/:user/:repo/commits"],target:"/github/commits/:user/:repo"},{title:"User Starred",source:["/:user"],target:"/github/starred_repos/:user"}]},
+"github.com":{_name:"GitHub",".":[{title:"Repo Issues",source:["/:user/:repo/issues","/:user/:repo/issues/:id"],target:"/github/issue/:user/:repo"},{title:"Repo PRs",source:["/:user/:repo/pulls","/:user/:repo/pull/:id"],target:"/github/pull/:user/:repo"},{title:"Repo Discussions",source:["/:user/:repo/discussions"],target:"/github/discussion/:user/:repo"},{title:"User Starred",source:["/:user"],target:"/github/starred_repos/:user"}]},
 "reddit.com":{_name:"Reddit",".":[{title:"Subreddit",source:["/r/:subreddit","/r/:subreddit/*"],target:"/reddit/subreddit/:subreddit"},{title:"User",source:["/user/:user","/user/:user/*"],target:"/reddit/user/:user"}]},
 "twitter.com":{_name:"Twitter/X",".":[{title:"User Timeline",source:["/:id","/:id/status/:status"],target:"/twitter/user/:id"}]},
 "x.com":{_name:"X (Twitter)",".":[{title:"User Timeline",source:["/:id","/:id/status/:status"],target:"/twitter/user/:id"}]},
