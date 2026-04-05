@@ -277,7 +277,7 @@ $("#baseChip").onclick=function(){$("#settingsBtn").click()};
 function showApp(){$("#app").style.display="block";$("#basePreview").textContent=instanceUrl;loadRadarRules()}
 async function loadRadarRules(){
 $("#routeGroups").innerHTML='<div class="route-empty"><span class="spinner"></span> Loading routes…</div>';
-try{var res=await fetch(instanceUrl+"/api/radar/rules");if(!res.ok)throw new Error("HTTP "+res.status);radarRules=await res.json()}catch(e){console.warn("Radar API failed, using fallback:",e);radarRules=getBuiltinRules()}
+try{var u=instanceUrl+"/api/radar/rules";if(accessKey)u+="?key="+encodeURIComponent(accessKey);var res=await fetch(u);if(!res.ok)throw new Error("HTTP "+res.status);radarRules=await res.json()}catch(e){console.warn("Radar API failed, using fallback:",e);radarRules=getBuiltinRules()}
 flattenRoutes();buildGroups("")}
 function flattenRoutes(){flatRoutes=[];if(!radarRules)return;for(var d in radarRules){var obj=radarRules[d];var name=obj._name||d;for(var sub in obj){if(sub==="_name")continue;var arr=Array.isArray(obj[sub])?obj[sub]:[];for(var i=0;i<arr.length;i++){var rule=arr[i];if(!rule.title&&!rule.target)continue;flatRoutes.push({domain:d,subdomain:sub,name:name,title:rule.title||"(untitled)",target:typeof rule.target==="string"?rule.target:null,source:rule.source||[],docs:rule.docs||null,params:extractParams(typeof rule.target==="string"?rule.target:"")})}}}flatRoutes.sort(function(a,b){return a.name.localeCompare(b.name)||a.title.localeCompare(b.title)})}
 function extractParams(t){return(t.match(/:([a-zA-Z_]+)\??/g)||[]).map(function(m){return{name:m.replace(/^:/,"").replace(/\?$/,""),optional:m.endsWith("?")}})}
