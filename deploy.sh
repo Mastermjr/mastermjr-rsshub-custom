@@ -33,3 +33,4 @@ gcloud run deploy "${SERVICE_NAME}" \
 echo ""
 echo "Done! Your custom routes are live."
 echo "Test with: echo \"https://\$MY_DOMAIN/liquidai/blog?key=\$MY_ACCESS_KEY\""
+echo "Generate: echo \"https://\$MY_DOMAIN/generate?key=\$MY_ACCESS_KEY\""
