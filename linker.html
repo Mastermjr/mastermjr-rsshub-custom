@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSSHub Linker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bricolage+Grotesque:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0c0e12;--bg2:#101318;--surface:#161a21;--surface2:#1c2029;--surface3:#232832;
+  --border:#262c38;--border2:#323a4a;
+  --text:#e8ecf2;--text2:#98a2b3;--text3:#626d82;
+  --orange:#f97316;--orange-soft:#f9731618;
+  --green:#34d399;--green-soft:#34d39912;--red:#f87171;--red-soft:#f8717112;
+  --radius:12px;--radius-sm:8px;--radius-xs:6px;
+  --container:1120px;
+  --font-display:'Bricolage Grotesque',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',monospace;
+}
+html{font-size:15px;scroll-behavior:smooth}
+body{font-family:var(--font-display);background:var(--bg);color:var(--text);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--orange);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:var(--font-mono);font-size:.88em;background:var(--surface2);padding:.15em .4em;border-radius:4px}
+.container{max-width:var(--container);margin:0 auto;padding:0 1.5rem}
+@media(max-width:640px){.container{padding:0 1rem}}
+
+.auth-overlay{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:1.5rem}
+.auth-overlay.hidden{display:none}
+.auth-card{width:100%;max-width:440px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2.25rem;box-shadow:0 24px 80px rgba(0,0,0,.5)}
+.auth-card h1{font-size:1.6rem;font-weight:800;color:var(--orange);margin-bottom:.25rem;display:flex;align-items:center;gap:.5rem}
+.auth-card .sub{color:var(--text2);font-size:.88rem;margin-bottom:2rem}
+.auth-field{margin-bottom:1.25rem}
+.auth-field label{display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:.4rem;font-family:var(--font-mono)}
+.auth-field input{width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:.85rem;padding:.7rem .9rem;border-radius:var(--radius-xs);outline:none;transition:border-color .2s,box-shadow .2s}
+.auth-field input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.auth-field input::placeholder{color:var(--text3)}
+.auth-field .hint{font-size:.72rem;color:var(--text3);margin-top:.3rem}
+.auth-save{width:100%;padding:.8rem;border:none;border-radius:var(--radius-sm);background:var(--orange);color:#000;font-family:var(--font-display);font-size:.95rem;font-weight:700;cursor:pointer;margin-top:.75rem;transition:opacity .15s}
+.auth-save:hover{opacity:.85}
+
+.modal-overlay{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.65);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;padding:1.25rem}
+.modal-overlay.visible{display:flex}
+.modal{width:100%;max-width:440px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;box-shadow:0 24px 80px rgba(0,0,0,.5)}
+.modal h2{font-size:1.15rem;font-weight:700;margin-bottom:1.5rem;display:flex;align-items:center;justify-content:space-between}
+.modal h2 button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:1.2rem;padding:4px}
+.modal .auth-field{margin-bottom:1rem}
+.modal-actions{display:flex;gap:.5rem;margin-top:1.5rem}
+.modal-actions .btn{flex:1;justify-content:center;padding:.65rem}
+
+.topbar{border-bottom:1px solid var(--border);position:sticky;top:0;z-index:100;background:rgba(12,14,18,.88);backdrop-filter:blur(16px)}
+.topbar__inner{display:flex;align-items:center;justify-content:space-between;gap:1rem;height:56px}
+.brand{display:flex;align-items:center;gap:.6rem}
+.brand__icon{width:34px;height:34px;background:var(--orange);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#000;flex-shrink:0}
+.brand__meta{line-height:1.2}
+.brand__title{font-size:.88rem;font-weight:700}
+.brand__sub{font-size:.65rem;color:var(--text3)}
+.nav{display:flex;align-items:center;gap:.25rem}
+.nav__link{font-size:.82rem;color:var(--text2);padding:.4rem .7rem;border-radius:var(--radius-xs);transition:all .15s;white-space:nowrap}
+.nav__link:hover{color:var(--text);background:var(--surface);text-decoration:none}
+.nav__cta{font-size:.82rem;font-weight:600;color:#000;background:var(--orange);padding:.45rem 1rem;border-radius:20px;transition:opacity .15s;white-space:nowrap}
+.nav__cta:hover{opacity:.85;text-decoration:none}
+.nav__gear{background:none;border:none;color:var(--text3);cursor:pointer;padding:.35rem;border-radius:var(--radius-xs);transition:color .15s;display:flex;align-items:center}
+.nav__gear:hover{color:var(--text)}
+@media(max-width:740px){.nav__link{display:none}.topbar__inner{height:50px}}
+
+.hero{padding:2.5rem 0 2rem;display:flex;gap:2.5rem;align-items:flex-start}
+.hero__left{flex:1;min-width:0}
+.hero__title{font-size:2rem;font-weight:800;line-height:1.15;margin-bottom:.65rem;letter-spacing:-.02em}
+.hero__desc{font-size:.95rem;color:var(--text2);max-width:520px;margin-bottom:1.25rem}
+.hero__chips{display:flex;flex-wrap:wrap;gap:.5rem}
+.chip{display:inline-flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--text2);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:.4rem .85rem;white-space:nowrap}
+.chip code{background:none;padding:0;font-size:.78rem;color:var(--text)}
+.chip--btn{cursor:pointer;transition:border-color .15s}.chip--btn:hover{border-color:var(--border2)}
+.chip__caret{font-size:.6rem;color:var(--text3)}
+.hero__right{flex-shrink:0;width:280px}
+.quick-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.15rem}
+.quick-card__title{font-size:.88rem;font-weight:700;margin-bottom:.75rem}
+.quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.quick-btn{font-size:.78rem;font-weight:500;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-xs);padding:.5rem .6rem;text-align:center;cursor:pointer;transition:all .15s}
+.quick-btn:hover{border-color:var(--border2);color:var(--text);background:var(--surface3)}
+@media(max-width:800px){.hero{flex-direction:column;gap:1.5rem;padding:1.75rem 0 1.5rem}.hero__title{font-size:1.5rem}.hero__right{width:100%}.quick-grid{grid-template-columns:1fr 1fr 1fr}}
+@media(max-width:480px){.quick-grid{grid-template-columns:1fr 1fr}}
+
+.grid{display:grid;grid-template-columns:320px 1fr;gap:1.25rem;padding-bottom:3rem;align-items:start}
+@media(max-width:860px){.grid{grid-template-columns:1fr;gap:1rem}}
+
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.panel__header{padding:1rem 1.15rem .75rem;border-bottom:1px solid var(--border)}
+.panel__title{font-size:1rem;font-weight:700;margin-bottom:.15rem}
+.panel__sub{font-size:.72rem;color:var(--text3)}
+.panel--side .panel__body{padding:.75rem}
+.search-wrap{margin-bottom:.75rem}
+.search-wrap label{display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:.35rem;font-family:var(--font-mono)}
+.search-input{width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-size:.85rem;padding:.6rem .8rem;border-radius:var(--radius-xs);outline:none;transition:border-color .2s}
+.search-input:focus{border-color:var(--orange)}
+.search-input::placeholder{color:var(--text3);font-size:.82rem}
+.route-groups{max-height:56vh;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem}
+.route-groups::-webkit-scrollbar{width:4px}
+.route-groups::-webkit-scrollbar-track{background:transparent}
+.route-groups::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.rgroup{border:1px solid var(--border);border-radius:var(--radius-xs);overflow:hidden}
+.rgroup__head{display:flex;align-items:center;justify-content:space-between;padding:.6rem .75rem;cursor:pointer;transition:background .1s;gap:.5rem;user-select:none}
+.rgroup__head:hover{background:var(--surface2)}
+.rgroup__left{display:flex;align-items:center;gap:.5rem;min-width:0}
+.rgroup__caret{font-size:.55rem;color:var(--text3);transition:transform .2s;flex-shrink:0}
+.rgroup.open .rgroup__caret{transform:rotate(90deg)}
+.rgroup__name{font-size:.85rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rgroup__count{font-size:.65rem;color:var(--text3);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.1rem .5rem;flex-shrink:0;font-family:var(--font-mono)}
+.rgroup__body{display:none;border-top:1px solid var(--border)}
+.rgroup.open .rgroup__body{display:block}
+.rroute{padding:.55rem .75rem;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
+.rroute:last-child{border-bottom:none}
+.rroute:hover{background:var(--surface2)}
+.rroute.selected{background:var(--orange-soft);border-left:3px solid var(--orange)}
+.rroute__title{font-size:.8rem;font-weight:500;margin-bottom:.15rem}
+.rroute__path{font-family:var(--font-mono);font-size:.72rem;color:var(--orange);word-break:break-all}
+.route-empty{text-align:center;padding:1.5rem .75rem;color:var(--text3);font-size:.82rem}
+
+.panel--main .panel__header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.panel--main .panel__body{padding:1.15rem}
+.toggle{display:flex;align-items:center;gap:.45rem;font-size:.78rem;color:var(--text2);cursor:pointer;user-select:none;white-space:nowrap}
+.toggle input{display:none}
+.toggle-track{width:30px;height:17px;background:var(--border);border-radius:9px;position:relative;transition:background .2s;flex-shrink:0}
+.toggle input:checked+.toggle-track{background:var(--orange)}
+.toggle-track::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;background:var(--text);border-radius:50%;transition:transform .2s}
+.toggle input:checked+.toggle-track::after{transform:translateX(13px)}
+
+.form-grid{display:flex;flex-wrap:wrap;gap:.75rem}
+.form-field{flex:1;min-width:180px}
+.form-field label{display:block;font-size:.78rem;font-weight:500;margin-bottom:.3rem}
+.form-field label span{color:var(--text3);font-weight:400}
+.form-field input{width:100%;background:var(--bg2);border:1px solid var(--border);color:var(--text);font-size:.85rem;padding:.6rem .8rem;border-radius:var(--radius-xs);outline:none;transition:border-color .2s;font-family:var(--font-mono)}
+.form-field input:focus{border-color:var(--orange)}
+.form-field input::placeholder{color:var(--text3);font-size:.8rem}
+.form-route-line{font-family:var(--font-mono);font-size:.72rem;color:var(--text3);margin-top:.75rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.form-route-line a{font-size:.72rem}
+.form-placeholder{color:var(--text3);font-size:.88rem;padding:.5rem 0}
+.paste-section{margin-bottom:1.25rem}
+.paste-label{font-size:.78rem;font-weight:600;color:var(--text2);margin-bottom:.4rem;display:flex;align-items:center;gap:.35rem}
+.paste-label svg{color:var(--orange)}
+.paste-wrap{position:relative}
+.paste-input{width:100%;background:var(--bg2);border:1.5px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:.85rem;padding:.7rem .9rem;padding-right:2.5rem;border-radius:var(--radius-xs);outline:none;transition:border-color .2s,box-shadow .2s}
+.paste-input:focus{border-color:var(--orange);box-shadow:0 0 0 3px var(--orange-soft)}
+.paste-input::placeholder{color:var(--text3);font-size:.82rem}
+.paste-clear{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:1rem;display:none;padding:2px}
+.paste-clear.visible{display:block}
+.divider{border:none;border-top:1px solid var(--border);margin:1rem 0}
+.result__header{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.5rem;flex-wrap:wrap}
+.result__title{font-size:1rem;font-weight:700}
+.result__actions{display:flex;gap:.4rem}
+.btn{font-family:var(--font-mono);font-size:.75rem;font-weight:500;padding:.5rem .9rem;border-radius:var(--radius-xs);border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:.3rem;white-space:nowrap}
+.btn:hover{background:var(--surface3);border-color:var(--border2);text-decoration:none}
+.btn--primary{background:var(--orange);border-color:var(--orange);color:#000;font-weight:600}
+.btn--primary:hover{opacity:.85;background:var(--orange)}
+.btn--primary:disabled{opacity:.35;cursor:not-allowed}
+.btn.copied{background:var(--green);border-color:var(--green);color:#000}
+.result__box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-xs);padding:.75rem .9rem;font-family:var(--font-mono);font-size:.82rem;word-break:break-all;line-height:1.6;min-height:42px;color:var(--text3);margin-bottom:.5rem}
+.result__box.has-url{color:var(--text)}
+.result__box .hl-domain{color:var(--text3)}
+.result__box .hl-route{color:var(--green)}
+.result__box .hl-key{color:var(--text3)}
+.result__hint{font-size:.72rem;color:var(--text3)}
+.match-badge{display:inline-flex;align-items:center;gap:.35rem;font-size:.72rem;font-weight:600;padding:.25rem .6rem;border-radius:10px;margin-top:.5rem;font-family:var(--font-mono)}
+.match-badge.found{color:var(--green);background:var(--green-soft);border:1px solid rgba(52,211,153,.2)}
+.match-badge.notfound{color:var(--red);background:var(--red-soft);border:1px solid rgba(248,113,113,.15)}
+.match-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.tip-box{border-top:1px solid var(--border);margin-top:1rem;padding-top:1rem}
+.tip-box__title{font-size:.78rem;font-weight:700;margin-bottom:.25rem}
+.tip-box__text{font-size:.78rem;color:var(--text3);line-height:1.55}
+.adv-area{display:none}.adv-area.visible{display:block}
+.adv-row{display:flex;gap:.5rem}.adv-row input{flex:1}
+.seo{padding:2.5rem 0}
+.seo__title{font-size:1.25rem;font-weight:700;margin-bottom:.5rem}
+.seo__desc{font-size:.88rem;color:var(--text2);margin-bottom:1.25rem;max-width:640px}
+.seo-steps{list-style:decimal;padding-left:1.25rem;margin-bottom:1.5rem}
+.seo-steps li{font-size:.88rem;color:var(--text2);margin-bottom:.35rem}
+.seo-examples{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.75rem;margin-bottom:2rem}
+.seo-ex{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem 1.15rem}
+.seo-ex h3{font-size:.9rem;font-weight:700;margin-bottom:.25rem}
+.seo-ex p{font-size:.82rem;color:var(--text2)}
+.faq{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.faq__title{font-size:1.15rem;font-weight:700;padding:1rem 1.15rem;border-bottom:1px solid var(--border)}
+.faq details{border-bottom:1px solid var(--border)}
+.faq details:last-child{border-bottom:none}
+.faq summary{padding:.85rem 1.15rem;font-size:.88rem;font-weight:500;cursor:pointer;list-style:none;display:flex;align-items:center;gap:.5rem;transition:background .1s}
+.faq summary:hover{background:var(--surface2)}
+.faq summary::before{content:'▸';color:var(--text3);font-size:.7rem;transition:transform .2s;flex-shrink:0}
+.faq details[open] summary::before{transform:rotate(90deg)}
+.faq summary::-webkit-details-marker{display:none}
+.faq details p{padding:0 1.15rem .85rem 1.85rem;font-size:.82rem;color:var(--text2);line-height:1.6}
+.site-footer{border-top:1px solid var(--border);padding:1.5rem 0}
+.footer__inner{display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.footer__brand{font-family:var(--font-mono);font-weight:600;font-size:.85rem;letter-spacing:.1em;color:var(--text2)}
+.footer__links{display:flex;align-items:center;gap:.35rem;font-size:.75rem;color:var(--text3);flex-wrap:wrap}
+.footer__links a{color:var(--text3)}.footer__links a:hover{color:var(--text);text-decoration:none}
+.footer__links .sep{color:var(--border)}
+.footer__right a{font-size:.78rem;color:var(--text3)}
+.spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--orange);border-radius:50%;animation:spin .6s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.animate-in{animation:fadeUp .25s ease}
+</style>
+</head>
+<body>
+<div id="authOverlay" class="auth-overlay"><div class="auth-card">
+<h1><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg> RSSHub Linker</h1>
+<div class="sub">Paste any URL, get the RSSHub feed link. Set up your instance once — saved in your browser.</div>
+<div class="auth-field"><label>Instance URL</label><input id="authInstance" type="url" placeholder="https://feeds.example.xyz" spellcheck="false"><div class="hint">Your self-hosted RSSHub instance</div></div>
+<div class="auth-field"><label>Access Key <span style="color:var(--text3)">(optional)</span></label><input id="authKey" type="text" placeholder="your-access-key..." spellcheck="false"><div class="hint">Appended as ?key=… to generated URLs</div></div>
+<button id="authSave" class="auth-save">Save &amp; Continue</button>
+</div></div>
+<div id="settingsModal" class="modal-overlay"><div class="modal">
+<h2>Settings <button id="settingsClose">✕</button></h2>
+<div class="auth-field"><label>Instance URL</label><input id="setInstance" type="url" spellcheck="false"></div>
+<div class="auth-field"><label>Access Key</label><input id="setKey" type="text" spellcheck="false"></div>
+<div class="modal-actions"><button id="settingsSave" class="btn btn--primary">Save</button><button id="settingsLogout" class="btn">Reset &amp; Logout</button></div>
+</div></div>
+<div id="app" style="display:none">
+<header class="topbar"><div class="container topbar__inner">
+<div class="brand"><div class="brand__icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></div><div class="brand__meta"><div class="brand__title">RSS Feed URL Generator</div><div class="brand__sub">Build RSSHub links in seconds</div></div></div>
+<nav class="nav"><a class="nav__link" href="https://docs.rsshub.app/guide/instances" target="_blank" rel="noreferrer">Public instances</a><a class="nav__link" href="https://docs.rsshub.app/routes/" target="_blank" rel="noreferrer">Official routes</a><a class="nav__cta" href="#generator">Generate now</a><button id="settingsBtn" class="nav__gear" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button></nav>
+</div></header>
+<main class="container">
+<section class="hero"><div class="hero__left">
+<h1 class="hero__title">Generate RSSHub feed links in one place</h1>
+<p class="hero__desc">Pick a route, fill parameters, and get a feed URL instantly. You can also use Advanced mode to paste any route path directly.</p>
+<div class="hero__chips"><span class="chip chip--btn" id="baseChip">Instance URL default: <code id="basePreview"></code> <span class="chip__caret">▼</span></span><span class="chip">Output format: <code>Instance URL + route path</code></span></div>
+</div><div class="hero__right"><div class="quick-card"><div class="quick-card__title">Quick Access</div><div class="quick-grid">
+<button class="quick-btn" data-q="github">GitHub RSS</button><button class="quick-btn" data-q="bilibili">Bilibili RSS</button>
+<button class="quick-btn" data-q="youtube">YouTube RSS</button><button class="quick-btn" data-q="telegram">Telegram RSS</button>
+<button class="quick-btn" data-q="twitter">Twitter/X RSS</button><button class="quick-btn" data-q="reddit">Reddit RSS</button>
+</div></div></div></section>
+<div id="generator" class="grid">
+<aside class="panel panel--side"><div class="panel__header"><div class="panel__title">Choose Route</div><div class="panel__sub">Source: RSSHub official route docs, sorted by popularity</div></div><div class="panel__body"><div class="search-wrap"><label for="search">Search</label><input id="search" class="search-input" placeholder="e.g. github / bilibili / youtube / telegram" autocomplete="off"></div><div id="routeGroups" class="route-groups"></div></div></aside>
+<section class="panel panel--main"><div class="panel__header"><div><div class="panel__title">Generate Feed URL</div><div class="panel__sub" id="selectedMeta">Pick a route on the left, or paste a URL below.</div></div><label class="toggle"><input id="advToggle" type="checkbox"><span class="toggle-track"></span><span>Advanced mode</span></label></div>
+<div class="panel__body">
+<div class="paste-section"><div class="paste-label"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Paste any URL to auto-detect route</div><div class="paste-wrap"><input id="urlInput" class="paste-input" type="url" placeholder="https://steve-yegge.medium.com/welcome-to-the..." spellcheck="false" autocomplete="off"><button id="urlClear" class="paste-clear">✕</button></div><div id="matchResult"></div></div>
+<hr class="divider">
+<div id="formArea"><div class="form-placeholder">Select a route from the left panel, or paste a URL above.</div></div>
+<div id="advArea" class="adv-area"><div class="paste-label" style="margin-bottom:.4rem">Paste route path directly</div><div class="adv-row"><input id="advPath" class="paste-input" placeholder="/medium/feed/@steve-yegge" spellcheck="false"><button id="advGenerate" class="btn btn--primary" style="padding:.65rem 1rem">Generate</button></div></div>
+<hr class="divider">
+<div class="result__header"><div class="result__title">Generated URL</div><div class="result__actions"><button id="copyBtn" class="btn btn--primary" disabled>Copy link</button><a id="openBtn" class="btn" href="#" target="_blank" rel="noreferrer">Open</a></div></div>
+<div id="resultBox" class="result__box">—</div>
+<div class="result__hint">If a template is outdated after an RSSHub update, use "Advanced mode" and paste the route path shown in official docs.</div>
+<div class="tip-box"><div class="tip-box__title">Tip</div><div class="tip-box__text">Feed content is fetched through RSSHub. If loading is slow or temporarily unavailable, it may be caused by network limits or anti-crawling rules. Try again later or switch to another instance.</div></div>
+</div></section>
+</div>
+<section class="seo"><h2 class="seo__title">RSSHub Usage Guide</h2><p class="seo__desc">This tool quickly turns route paths from RSSHub docs into valid feed URLs. Start with a common platform route, verify it works, then move to your target route.</p>
+<ol class="seo-steps"><li>Pick an instance URL first and make sure it's reachable.</li><li>Search and pick a route template, then fill required parameters first.</li><li>Click "Open" to verify results before adding the link to your reader.</li></ol>
+<div class="seo-examples"><div class="seo-ex"><h3>GitHub</h3><p>Validate with a GitHub route first, then expand to Releases, Issues, or user activity feeds.</p></div><div class="seo-ex"><h3>Bilibili</h3><p>For creator feeds, verify UID first, then add optional filters only when needed.</p></div><div class="seo-ex"><h3>YouTube</h3><p>Start from channel-level routes, then fine-tune parameters to match update frequency.</p></div></div>
+<div class="faq"><div class="faq__title">FAQ</div>
+<details><summary>Why does generated URL look valid but "Open" still fails?</summary><p>URL generation only validates format. Fetching can still fail because the target site is unavailable, instance network is unstable, anti-crawler rules are triggered, or parameters are incorrect.</p></details>
+<details><summary>Where can I find route parameters?</summary><p>Extract them from the target page URL whenever possible. For example, GitHub owner/repo, Bilibili uid, and YouTube channelId are usually in the URL path.</p></details>
+<details><summary>Where does the route data come from?</summary><p>Route data is loaded live from your RSSHub instance's radar rules API.</p></details>
+<details><summary>Does this tool host my feed content?</summary><p>No. This tool only composes URLs. Actual fetching is handled by your RSSHub instance.</p></details>
+<details><summary>When should I use Advanced mode?</summary><p>When you already know the full route path, or when your target route is not listed in the browser.</p></details>
+</div></section>
+</main>
+<footer class="site-footer"><div class="container footer__inner"><div><div class="footer__brand">RSSHUB LINKER</div><div class="footer__links"><span>Powered by your own instance</span><span class="sep">·</span><a href="https://docs.rsshub.app/" target="_blank" rel="noreferrer">RSSHub docs</a><span class="sep">·</span><a href="https://github.com/DIYgod/RSSHub" target="_blank" rel="noreferrer">GitHub</a></div></div><div class="footer__right"><a href="https://docs.rsshub.app/" target="_blank" rel="noreferrer">docs.rsshub.app</a></div></div></footer>
+</div>
+<script>
+function setCookie(n,v,d=365){const e=new Date();e.setTime(e.getTime()+d*864e5);document.cookie=n+"="+encodeURIComponent(v)+";expires="+e.toUTCString()+";path=/;SameSite=Lax"}
+function getCookie(n){const m=document.cookie.match(new RegExp("(?:^|; )"+n+"=([^;]*)"));return m?decodeURIComponent(m[1]):""}
+function clearCookies(){["rsshub_instance","rsshub_key","rsshub_authed"].forEach(function(c){setCookie(c,"",-1)})}
+var instanceUrl="",accessKey="",radarRules=null,flatRoutes=[],grouped={},selectedRoute=null,generatedUrl="";
+function $(s){return document.querySelector(s)}
+function init(){var sp=new URLSearchParams(location.search);var paramKey=sp.get("key")||"";var autoInstance=location.origin;if(paramKey){instanceUrl=autoInstance;accessKey=paramKey;setCookie("rsshub_instance",autoInstance);setCookie("rsshub_key",paramKey);setCookie("rsshub_authed","1");$("#authOverlay").classList.add("hidden");showApp();return}if(getCookie("rsshub_authed")==="1"){instanceUrl=getCookie("rsshub_instance");accessKey=getCookie("rsshub_key");$("#authOverlay").classList.add("hidden");showApp();return}$("#authInstance").value=autoInstance}
+$("#authSave").onclick=function(){var inst=$("#authInstance").value.trim().replace(/\/+$/,"");var key=$("#authKey").value.trim();if(!inst){$("#authInstance").focus();return}instanceUrl=inst;accessKey=key;setCookie("rsshub_instance",inst);setCookie("rsshub_key",key);setCookie("rsshub_authed","1");$("#authOverlay").classList.add("hidden");showApp()};
+$("#settingsBtn").onclick=function(){$("#setInstance").value=instanceUrl;$("#setKey").value=accessKey;$("#settingsModal").classList.add("visible")};
+$("#settingsClose").onclick=function(){$("#settingsModal").classList.remove("visible")};
+$("#settingsModal").onclick=function(e){if(e.target===$("#settingsModal"))$("#settingsModal").classList.remove("visible")};
+$("#settingsSave").onclick=function(){var inst=$("#setInstance").value.trim().replace(/\/+$/,"");var key=$("#setKey").value.trim();if(!inst)return;instanceUrl=inst;accessKey=key;setCookie("rsshub_instance",inst);setCookie("rsshub_key",key);radarRules=null;flatRoutes=[];grouped={};$("#settingsModal").classList.remove("visible");$("#basePreview").textContent=instanceUrl;loadRadarRules()};
+$("#settingsLogout").onclick=function(){clearCookies();location.reload()};
+$("#baseChip").onclick=function(){$("#settingsBtn").click()};
+function showApp(){$("#app").style.display="block";$("#basePreview").textContent=instanceUrl;loadRadarRules()}
+async function loadRadarRules(){
+$("#routeGroups").innerHTML='<div class="route-empty"><span class="spinner"></span> Loading routes…</div>';
+try{var res=await fetch(instanceUrl+"/api/radar/rules");if(!res.ok)throw new Error("HTTP "+res.status);radarRules=await res.json()}catch(e){console.warn("Radar API failed, using fallback:",e);radarRules=getBuiltinRules()}
+flattenRoutes();buildGroups("")}
+function flattenRoutes(){flatRoutes=[];if(!radarRules)return;for(var d in radarRules){var obj=radarRules[d];var name=obj._name||d;for(var sub in obj){if(sub==="_name")continue;var arr=Array.isArray(obj[sub])?obj[sub]:[];for(var i=0;i<arr.length;i++){var rule=arr[i];if(!rule.title&&!rule.target)continue;flatRoutes.push({domain:d,subdomain:sub,name:name,title:rule.title||"(untitled)",target:typeof rule.target==="string"?rule.target:null,source:rule.source||[],docs:rule.docs||null,params:extractParams(typeof rule.target==="string"?rule.target:"")})}}}flatRoutes.sort(function(a,b){return a.name.localeCompare(b.name)||a.title.localeCompare(b.title)})}
+function extractParams(t){return(t.match(/:([a-zA-Z_]+)\??/g)||[]).map(function(m){return{name:m.replace(/^:/,"").replace(/\?$/,""),optional:m.endsWith("?")}})}
+function buildGroups(query){var q=query.toLowerCase().trim();var filtered=q?flatRoutes.filter(function(r){return r.name.toLowerCase().includes(q)||r.domain.toLowerCase().includes(q)||r.title.toLowerCase().includes(q)||(r.target&&r.target.toLowerCase().includes(q))}):flatRoutes;grouped={};for(var i=0;i<filtered.length;i++){var r=filtered[i];var key=r.name;if(!grouped[key])grouped[key]={name:r.name,domain:r.domain,routes:[]};grouped[key].routes.push(r)}
+var el=$("#routeGroups"),keys=Object.keys(grouped).sort();if(!keys.length){el.innerHTML='<div class="route-empty">No matching routes found.</div>';return}
+el.innerHTML=keys.map(function(k){var g=grouped[k];return'<div class="rgroup" data-group="'+esc(k)+'"><div class="rgroup__head" onclick="toggleGroup(this)"><div class="rgroup__left"><span class="rgroup__caret">▸</span><span class="rgroup__name">'+esc(g.name)+'</span></div><span class="rgroup__count">'+g.routes.length+" route"+(g.routes.length>1?"s":"")+'</span></div><div class="rgroup__body">'+g.routes.map(function(r,i){return'<div class="rroute" data-group="'+esc(k)+'" data-idx="'+i+'" onclick="selectRoute(this)"><div class="rroute__title">'+esc(r.title)+"</div>"+(r.target?'<div class="rroute__path">'+esc(r.target)+"</div>":"")+"</div>"}).join("")+"</div></div>"}).join("")}
+window.toggleGroup=function(h){h.closest(".rgroup").classList.toggle("open")};
+var searchTimer;$("#search").oninput=function(e){clearTimeout(searchTimer);searchTimer=setTimeout(function(){buildGroups(e.target.value)},200)};
+document.querySelectorAll(".quick-btn").forEach(function(b){b.onclick=function(){$("#search").value=b.dataset.q;buildGroups(b.dataset.q);document.querySelector("#generator").scrollIntoView({behavior:"smooth"})}});
+window.selectRoute=function(el){document.querySelectorAll(".rroute.selected").forEach(function(r){r.classList.remove("selected")});el.classList.add("selected");var g=grouped[el.dataset.group];var route=g.routes[parseInt(el.dataset.idx)];selectedRoute=route;$("#selectedMeta").textContent=route.name+" · "+route.title;renderParamForm(route);updateGeneratedUrl()};
+function renderParamForm(route){if(!route.target||!route.params.length){$("#formArea").innerHTML='<div class="form-route-line">Route: <code>'+esc(route.target||"—")+"</code>"+(route.docs?' · <a href="'+esc(route.docs)+'" target="_blank" rel="noreferrer">Official docs</a>':"")+"</div>";return}
+$("#formArea").innerHTML='<div class="form-grid">'+route.params.map(function(p){return'<div class="form-field"><label>'+esc(p.name)+' <span>('+( p.optional?"optional":"required")+')</span></label><input class="param-input" data-param="'+esc(p.name)+'" placeholder="e.g. …" spellcheck="false"></div>'}).join("")+'</div><div class="form-route-line">Route: <code>'+esc(route.target)+"</code>"+(route.docs?' · <a href="'+esc(route.docs)+'" target="_blank" rel="noreferrer">Official docs</a>':"")+"</div>";
+document.querySelectorAll(".param-input").forEach(function(inp){inp.addEventListener("input",updateGeneratedUrl)})}
+function updateGeneratedUrl(){if(!selectedRoute||!selectedRoute.target){clearGenerated();return}var path=selectedRoute.target;document.querySelectorAll(".param-input").forEach(function(inp){var v=inp.value.trim();if(v)path=path.replace(new RegExp(":"+inp.dataset.param+"\\\\??"),v)});path=path.replace(/\/:[a-zA-Z_]+\?/g,"");if(/:/.test(path)){clearGenerated();return}setGenerated(path)}
+function buildFeedUrl(p){var u=instanceUrl+p;if(accessKey)u+=(u.includes("?")?"&":"?")+"key="+accessKey;return u}
+function setGenerated(path){generatedUrl=buildFeedUrl(path);var box=$("#resultBox");var kh=accessKey?'<span class="hl-key">?key='+esc(accessKey.slice(0,8))+"…</span>":"";box.innerHTML='<span class="hl-domain">'+esc(instanceUrl)+'</span><span class="hl-route">'+esc(path)+"</span>"+kh;box.classList.add("has-url");$("#copyBtn").disabled=false;$("#openBtn").href=generatedUrl}
+function clearGenerated(){generatedUrl="";$("#resultBox").textContent="—";$("#resultBox").classList.remove("has-url");$("#copyBtn").disabled=true;$("#openBtn").href="#"}
+$("#copyBtn").onclick=async function(){if(!generatedUrl)return;try{await navigator.clipboard.writeText(generatedUrl);var b=$("#copyBtn");b.classList.add("copied");b.textContent="Copied!";setTimeout(function(){b.classList.remove("copied");b.textContent="Copy link"},1400)}catch(e){}};
+$("#advToggle").onchange=function(e){$("#advArea").classList.toggle("visible",e.target.checked)};
+$("#advGenerate").onclick=doAdv;$("#advPath").onkeydown=function(e){if(e.key==="Enter")doAdv()};
+function doAdv(){var p=$("#advPath").value.trim();if(!p)return;if(!p.startsWith("/"))p="/"+p;setGenerated(p)}
+$("#urlInput").addEventListener("input",debounce(handleUrl,350));
+$("#urlInput").addEventListener("paste",function(){setTimeout(handleUrl,60)});
+$("#urlClear").onclick=function(){$("#urlInput").value="";$("#urlClear").classList.remove("visible");$("#matchResult").innerHTML=""};
+function handleUrl(){var val=$("#urlInput").value.trim();$("#urlClear").classList.toggle("visible",val.length>0);if(!val){$("#matchResult").innerHTML="";return}var url;try{url=new URL(val.startsWith("http")?val:"https://"+val)}catch(e){$("#matchResult").innerHTML='<div class="match-badge notfound animate-in"><span class="dot"></span>Invalid URL</div>';return}var m=matchUrl(url);if(m){setGenerated(m.target);$("#matchResult").innerHTML='<div class="match-badge found animate-in"><span class="dot"></span>Match — '+esc(m.title)+"</div>";$("#selectedMeta").textContent=m.title}else{$("#matchResult").innerHTML='<div class="match-badge notfound animate-in"><span class="dot"></span>No route for '+esc(url.hostname)+"</div>"}}
+
+/* ===== HARDCODED ROUTE HASHTABLE ===== */
+/* Each entry: domain -> function(hostname, pathname, searchParams) -> {target, title} or null */
+/* Handles subdomains (like steve-yegge.medium.com) and path patterns */
+var ROUTE_TABLE = {
+
+  "medium.com": function(h, p) {
+    // subdomain style: steve-yegge.medium.com/anything
+    var sub = h.replace(/\.medium\.com$/, "");
+    if (sub !== h && sub !== "www" && sub !== "medium") return {target: "/medium/feed/" + sub, title: "Medium · " + sub};
+    // path style: medium.com/@user/anything
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/medium/feed/" + m[1], title: "Medium · " + m[1]};
+    // tag style: medium.com/tag/something
+    m = p.match(/^\/tag\/([^\/]+)/);
+    if (m) return {target: "/medium/tag/" + m[1], title: "Medium Tag · " + m[1]};
+    return null;
+  },
+
+  "youtube.com": function(h, p, sp) {
+    // @handle: youtube.com/@username
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/youtube/user/@" + m[1], title: "YouTube · @" + m[1]};
+    // channel: youtube.com/channel/UCxxxxx
+    m = p.match(/^\/channel\/([^\/]+)/);
+    if (m) return {target: "/youtube/channel/" + m[1], title: "YouTube Channel"};
+    // playlist: youtube.com/playlist?list=PLxxxxx
+    if (p.startsWith("/playlist") && sp.get("list")) return {target: "/youtube/playlist/" + sp.get("list"), title: "YouTube Playlist"};
+    // watch: youtube.com/watch?v=xxx — not a feed, but user might want the channel
+    // shorts: youtube.com/shorts/xxx
+    return null;
+  },
+
+  "github.com": function(h, p) {
+    var parts = p.replace(/^\//, "").split("/").filter(Boolean);
+    if (parts.length < 1) return null;
+    var user = parts[0], repo = parts[1], section = parts[2];
+    if (!repo) return {target: "/github/starred_repos/" + user, title: "GitHub · " + user + " stars"};
+    if (section === "issues") return {target: "/github/issue/" + user + "/" + repo, title: "GitHub Issues · " + user + "/" + repo};
+    if (section === "pulls" || section === "pull") return {target: "/github/pull/" + user + "/" + repo, title: "GitHub PRs · " + user + "/" + repo};
+    if (section === "releases") return {target: "/github/release/" + user + "/" + repo, title: "GitHub Releases · " + user + "/" + repo};
+    if (section === "commits") return {target: "/github/commits/" + user + "/" + repo, title: "GitHub Commits · " + user + "/" + repo};
+    if (section === "discussions") return {target: "/github/discussion/" + user + "/" + repo, title: "GitHub Discussions · " + user + "/" + repo};
+    // default: repo → issues
+    return {target: "/github/issue/" + user + "/" + repo, title: "GitHub Issues · " + user + "/" + repo};
+  },
+
+  "reddit.com": function(h, p) {
+    var m = p.match(/^\/r\/([^\/]+)/);
+    if (m) return {target: "/reddit/subreddit/" + m[1], title: "Reddit · r/" + m[1]};
+    m = p.match(/^\/user\/([^\/]+)/);
+    if (m) return {target: "/reddit/user/" + m[1], title: "Reddit · u/" + m[1]};
+    return null;
+  },
+
+  "old.reddit.com": function(h, p) { return ROUTE_TABLE["reddit.com"](h, p); },
+
+  "twitter.com": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["home","explore","search","notifications","messages","settings","i","intent"].includes(m[1])) return {target: "/twitter/user/" + m[1], title: "Twitter/X · @" + m[1]};
+    return null;
+  },
+
+  "x.com": function(h, p) { return ROUTE_TABLE["twitter.com"](h, p); },
+
+  "t.me": function(h, p) {
+    var m = p.match(/^\/s\/([^\/]+)/);
+    if (m) return {target: "/telegram/channel/" + m[1], title: "Telegram · " + m[1]};
+    m = p.match(/^\/([^\/]+)/);
+    if (m && m[1] !== "addstickers" && m[1] !== "joinchat") return {target: "/telegram/channel/" + m[1], title: "Telegram · " + m[1]};
+    return null;
+  },
+
+  "telegram.me": function(h, p) { return ROUTE_TABLE["t.me"](h, p); },
+
+  "substack.com": function(h, p) {
+    // subdomain: username.substack.com
+    var sub = h.replace(/\.substack\.com$/, "");
+    if (sub !== h && sub !== "www" && sub !== "substack") return {target: "/substack/" + sub, title: "Substack · " + sub};
+    // path: substack.com/@username
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/substack/" + m[1], title: "Substack · " + m[1]};
+    return null;
+  },
+
+  "bilibili.com": function(h, p) {
+    // space.bilibili.com/12345
+    if (h === "space.bilibili.com" || h.endsWith(".bilibili.com")) {
+      var m = p.match(/^\/(\d+)/);
+      if (m) {
+        if (p.includes("/video")) return {target: "/bilibili/user/video/" + m[1], title: "Bilibili Video · " + m[1]};
+        return {target: "/bilibili/user/dynamic/" + m[1], title: "Bilibili Dynamic · " + m[1]};
+      }
+    }
+    return null;
+  },
+
+  "threads.net": function(h, p) {
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/threads/" + m[1], title: "Threads · @" + m[1]};
+    return null;
+  },
+
+  "instagram.com": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["p","reel","reels","explore","accounts","stories","direct","tv"].includes(m[1])) return {target: "/picuki/profile/" + m[1], title: "Instagram · " + m[1]};
+    return null;
+  },
+
+  "nytimes.com": function(h, p) {
+    var m = p.match(/^\/section\/([^\/]+)/);
+    if (m) return {target: "/nytimes/" + m[1], title: "NYT · " + m[1]};
+    m = p.match(/^\/([^\/]+)/);
+    if (m && !["interactive","video","live"].includes(m[1])) return {target: "/nytimes/" + m[1], title: "NYT · " + m[1]};
+    return null;
+  },
+
+  "reuters.com": function(h, p) {
+    var parts = p.replace(/^\//, "").split("/").filter(Boolean);
+    if (parts.length >= 2) return {target: "/reuters/" + parts[0] + "/" + parts[1], title: "Reuters · " + parts[0] + "/" + parts[1]};
+    if (parts.length === 1) return {target: "/reuters/" + parts[0], title: "Reuters · " + parts[0]};
+    return null;
+  },
+
+  "producthunt.com": function(h, p) {
+    if (p === "/" || p === "") return {target: "/producthunt/today", title: "Product Hunt · Today"};
+    var m = p.match(/^\/posts\/([^\/]+)/);
+    if (m) return {target: "/producthunt/today", title: "Product Hunt · Today"};
+    return {target: "/producthunt/today", title: "Product Hunt · Today"};
+  },
+
+  "news.ycombinator.com": function(h, p) {
+    if (p.startsWith("/show")) return {target: "/hackernews/show", title: "HN · Show"};
+    if (p.startsWith("/ask")) return {target: "/hackernews/ask", title: "HN · Ask"};
+    if (p.startsWith("/best")) return {target: "/hackernews/best", title: "HN · Best"};
+    if (p.startsWith("/newest")) return {target: "/hackernews/newest", title: "HN · New"};
+    return {target: "/hackernews", title: "Hacker News"};
+  },
+
+  "zhihu.com": function(h, p) {
+    var m = p.match(/^\/people\/([^\/]+)/);
+    if (m) return {target: "/zhihu/people/activities/" + m[1], title: "Zhihu · " + m[1]};
+    m = p.match(/^\/column\/([^\/]+)/);
+    if (m) return {target: "/zhihu/zhuanlan/" + m[1], title: "Zhihu Column · " + m[1]};
+    m = p.match(/^\/topic\/(\d+)/);
+    if (m) return {target: "/zhihu/topic/" + m[1], title: "Zhihu Topic · " + m[1]};
+    if (p.startsWith("/hot")) return {target: "/zhihu/hot", title: "Zhihu · Hot"};
+    return null;
+  },
+
+  "weibo.com": function(h, p) {
+    var m = p.match(/^\/u\/(\d+)/) || p.match(/^\/(\d+)/);
+    if (m) return {target: "/weibo/user/" + m[1], title: "Weibo · " + m[1]};
+    return null;
+  },
+
+  "douban.com": function(h, p) {
+    var m = p.match(/^\/people\/([^\/]+)/);
+    if (m) return {target: "/douban/people/" + m[1] + "/status", title: "Douban · " + m[1]};
+    m = p.match(/^\/group\/([^\/]+)/);
+    if (m) return {target: "/douban/group/" + m[1], title: "Douban Group · " + m[1]};
+    return null;
+  },
+
+  "npmjs.com": function(h, p) {
+    var m = p.match(/^\/package\/(@?[^\/]+(?:\/[^\/]+)?)/);
+    if (m) return {target: "/npm/package/" + m[1], title: "npm · " + m[1]};
+    return null;
+  },
+
+  "v2ex.com": function(h, p) {
+    if (p.startsWith("/t/")) { var m = p.match(/^\/t\/(\d+)/); if (m) return {target: "/v2ex/post/" + m[1], title: "V2EX Post · " + m[1]}; }
+    if (p.startsWith("/go/")) { var m2 = p.match(/^\/go\/([^\/]+)/); if (m2) return {target: "/v2ex/topics/" + m2[1], title: "V2EX · " + m2[1]}; }
+    return {target: "/v2ex/topics/latest", title: "V2EX · Latest"};
+  },
+
+  "tiktok.com": function(h, p) {
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/tiktok/user/@" + m[1], title: "TikTok · @" + m[1]};
+    return null;
+  },
+
+  "twitch.tv": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["directory","downloads","jobs","turbo"].includes(m[1])) return {target: "/twitch/live/" + m[1], title: "Twitch · " + m[1]};
+    return null;
+  },
+
+  "pinterest.com": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["pin","search","ideas","today","_"].includes(m[1])) return {target: "/pinterest/user/" + m[1], title: "Pinterest · " + m[1]};
+    return null;
+  },
+
+  "bsky.app": function(h, p) {
+    var m = p.match(/^\/profile\/([^\/]+)/);
+    if (m) return {target: "/bsky/profile/" + m[1], title: "Bluesky · " + m[1]};
+    return null;
+  },
+
+  "mastodon.social": function(h, p) {
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/mastodon/timeline/" + m[1] + "@mastodon.social", title: "Mastodon · @" + m[1]};
+    return null;
+  },
+
+  "hachyderm.io": function(h, p) {
+    var m = p.match(/^\/@([^\/]+)/);
+    if (m) return {target: "/mastodon/timeline/" + m[1] + "@hachyderm.io", title: "Mastodon · @" + m[1]};
+    return null;
+  },
+
+  "apnews.com": function(h, p) {
+    var m = p.match(/^\/hub\/([^\/]+)/);
+    if (m) return {target: "/apnews/topics/" + m[1], title: "AP News · " + m[1]};
+    return null;
+  },
+
+  "36kr.com": function(h, p) {
+    if (p.startsWith("/newsflashes")) return {target: "/36kr/newsflashes", title: "36kr · Newsflashes"};
+    return {target: "/36kr/hot-list", title: "36kr · Hot"};
+  },
+
+  "sspai.com": function(h, p) {
+    var m = p.match(/^\/u\/([^\/]+)/);
+    if (m) return {target: "/sspai/author/" + m[1], title: "少数派 · " + m[1]};
+    return {target: "/sspai/matrix", title: "少数派 Matrix"};
+  },
+
+  "juejin.cn": function(h, p) {
+    var m = p.match(/^\/user\/(\d+)/);
+    if (m) return {target: "/juejin/posts/" + m[1], title: "Juejin · " + m[1]};
+    return null;
+  },
+
+  "xiaohongshu.com": function(h, p) {
+    var m = p.match(/^\/user\/profile\/([^\/]+)/);
+    if (m) return {target: "/xiaohongshu/user/" + m[1] + "/notes", title: "小红书 · " + m[1]};
+    return null;
+  },
+
+  "steamcommunity.com": function(h, p) {
+    var m = p.match(/^\/app\/(\d+)/);
+    if (m) return {target: "/steam/news/" + m[1], title: "Steam News · " + m[1]};
+    return null;
+  },
+
+  "store.steampowered.com": function(h, p) {
+    var m = p.match(/^\/app\/(\d+)/);
+    if (m) return {target: "/steam/news/" + m[1], title: "Steam · " + m[1]};
+    return null;
+  },
+
+  "dev.to": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["t","search","top","latest","enter","signin"].includes(m[1])) return {target: "/dev.to/user/" + m[1], title: "DEV · " + m[1]};
+    return null;
+  },
+
+  "letterboxd.com": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["film","films","list","lists","search","activity","members","journal"].includes(m[1])) return {target: "/letterboxd/user/" + m[1] + "/diary", title: "Letterboxd · " + m[1]};
+    return null;
+  },
+
+  "pixiv.net": function(h, p) {
+    var m = p.match(/^\/users\/(\d+)/);
+    if (m) return {target: "/pixiv/user/" + m[1], title: "Pixiv · " + m[1]};
+    return null;
+  },
+
+  "soundcloud.com": function(h, p) {
+    var m = p.match(/^\/([^\/]+)/);
+    if (m && !["discover","search","stream","upload","charts","you"].includes(m[1])) return {target: "/soundcloud/tracks/" + m[1], title: "SoundCloud · " + m[1]};
+    return null;
+  },
+
+  "bandcamp.com": function(h, p) {
+    // subdomain: artist.bandcamp.com
+    var sub = h.replace(/\.bandcamp\.com$/, "");
+    if (sub !== h && sub !== "www") return {target: "/bandcamp/" + sub, title: "Bandcamp · " + sub};
+    return null;
+  },
+
+  "wordpress.com": function(h, p) {
+    // subdomain: blog.wordpress.com
+    var sub = h.replace(/\.wordpress\.com$/, "");
+    if (sub !== h && sub !== "www") return {target: "/wordpress/" + sub + ".wordpress.com", title: "WordPress · " + sub};
+    return null;
+  },
+
+  "blogspot.com": function(h, p) {
+    var sub = h.replace(/\.blogspot\.com$/, "");
+    if (sub !== h && sub !== "www") return {target: "/blogspot/" + sub, title: "Blogspot · " + sub};
+    return null;
+  },
+
+  "tumblr.com": function(h, p) {
+    var sub = h.replace(/\.tumblr\.com$/, "");
+    if (sub !== h && sub !== "www" && sub !== "tumblr") return {target: "/tumblr/user/" + sub, title: "Tumblr · " + sub};
+    return null;
+  },
+
+  "lemmy.world": function(h, p) {
+    var m = p.match(/^\/c\/([^\/]+)/);
+    if (m) return {target: "/lemmy/community/lemmy.world/c/" + m[1], title: "Lemmy · " + m[1]};
+    return null;
+  },
+
+  "lobste.rs": function(h, p) {
+    var m = p.match(/^\/t\/([^\/]+)/);
+    if (m) return {target: "/lobste.rs/tag/" + m[1], title: "Lobsters · " + m[1]};
+    return {target: "/lobste.rs", title: "Lobsters"};
+  },
+
+  "codeberg.org": function(h, p) {
+    var parts = p.replace(/^\//, "").split("/").filter(Boolean);
+    if (parts.length >= 2) return {target: "/codeberg/" + parts[0] + "/" + parts[1] + "/releases", title: "Codeberg · " + parts[0] + "/" + parts[1]};
+    return null;
+  },
+
+  "gitlab.com": function(h, p) {
+    var parts = p.replace(/^\//, "").split("/").filter(Boolean);
+    if (parts.length >= 2) return {target: "/gitlab/explore/releases/" + parts[0] + "/" + parts[1], title: "GitLab · " + parts[0] + "/" + parts[1]};
+    return null;
+  }
+};
+
+function matchUrl(url) {
+  var hostname = url.hostname.replace(/^www\./, "");
+  var path = url.pathname || "/";
+  var sp = url.searchParams;
+
+  // Direct domain match
+  if (ROUTE_TABLE[hostname]) {
+    var result = ROUTE_TABLE[hostname](hostname, path, sp);
+    if (result) return result;
+  }
+
+  // Subdomain match: try progressively broader domains
+  // e.g. steve-yegge.medium.com → try medium.com
+  var parts = hostname.split(".");
+  for (var i = 1; i < parts.length - 1; i++) {
+    var parent = parts.slice(i).join(".");
+    if (ROUTE_TABLE[parent]) {
+      var result2 = ROUTE_TABLE[parent](hostname, path, sp);
+      if (result2) return result2;
+    }
+  }
+
+  // Try matching any mastodon-like instance (has /@user path pattern)
+  var mastoMatch = path.match(/^\/@([^\/]+)/);
+  if (mastoMatch) {
+    return {target: "/mastodon/timeline/" + mastoMatch[1] + "@" + hostname, title: "Mastodon · @" + mastoMatch[1] + "@" + hostname};
+  }
+
+  return null;
+}
+
+function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}
+function debounce(fn,ms){var t;return function(){var a=arguments;clearTimeout(t);t=setTimeout(function(){fn.apply(null,a)},ms)}}
+function getBuiltinRules(){return{
+"medium.com":{_name:"Medium",".":[{title:"User Feed",source:["/@:user","/@:user/:slug"],target:"/medium/feed/:user"}]},
+"youtube.com":{_name:"YouTube",".":[{title:"User Videos",source:["/@:username","/@:username/videos"],target:"/youtube/user/@:username"},{title:"Channel",source:["/channel/:id","/channel/:id/videos"],target:"/youtube/channel/:id"},{title:"Playlist",source:["/playlist"],target:"/youtube/playlist/:id"}]},
+"github.com":{_name:"GitHub",".":[{title:"Repo Issues",source:["/:user/:repo/issues","/:user/:repo/issues/:id","/:user/:repo"],target:"/github/issue/:user/:repo"},{title:"Repo Releases",source:["/:user/:repo/releases"],target:"/github/release/:user/:repo"},{title:"Repo Commits",source:["/:user/:repo/commits"],target:"/github/commits/:user/:repo"},{title:"User Starred",source:["/:user"],target:"/github/starred_repos/:user"}]},
+"reddit.com":{_name:"Reddit",".":[{title:"Subreddit",source:["/r/:subreddit","/r/:subreddit/*"],target:"/reddit/subreddit/:subreddit"},{title:"User",source:["/user/:user","/user/:user/*"],target:"/reddit/user/:user"}]},
+"twitter.com":{_name:"Twitter/X",".":[{title:"User Timeline",source:["/:id","/:id/status/:status"],target:"/twitter/user/:id"}]},
+"x.com":{_name:"X (Twitter)",".":[{title:"User Timeline",source:["/:id","/:id/status/:status"],target:"/twitter/user/:id"}]},
+"t.me":{_name:"Telegram",".":[{title:"Channel",source:["/s/:username","/:username"],target:"/telegram/channel/:username"}]},
+"substack.com":{_name:"Substack",".":[{title:"Blog",source:["/@:id","/@:id/*"],target:"/substack/:id"}]},
+"bilibili.com":{_name:"Bilibili",space:[{title:"User Dynamic",source:["/:uid","/:uid/dynamic"],target:"/bilibili/user/dynamic/:uid"},{title:"User Video",source:["/:uid/video"],target:"/bilibili/user/video/:uid"}]},
+"threads.net":{_name:"Threads",".":[{title:"User",source:["/@:user"],target:"/threads/:user"}]},
+"instagram.com":{_name:"Instagram",".":[{title:"User",source:["/:id","/:id/*"],target:"/picuki/profile/:id"}]},
+"nytimes.com":{_name:"NYT",".":[{title:"Section",source:["/section/:section"],target:"/nytimes/:section"}]},
+"reuters.com":{_name:"Reuters",".":[{title:"Category",source:["/:category","/:category/:topic"],target:"/reuters/:category/:topic"}]}
+}}
+init();
+</script>
+</body>
+</html>
