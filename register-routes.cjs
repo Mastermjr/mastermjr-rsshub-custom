@@ -14,14 +14,20 @@ const fs = require('fs');
 const path = require('path');
 
 const APP_DIR = __dirname;
-const ROUTES_JS = path.join(APP_DIR, 'assets', 'build', 'routes.js');
+// routes.js location varies: flat /app/assets/ or /app/dist/assets/
+const ROUTES_JS_CANDIDATES = [
+    path.join(APP_DIR, 'assets', 'build', 'routes.js'),
+    path.join(APP_DIR, 'dist', 'assets', 'build', 'routes.js'),
+];
+const ROUTES_JS = ROUTES_JS_CANDIDATES.find(p => fs.existsSync(p));
 const CUSTOM_SRC = path.join(APP_DIR, 'lib', 'routes');
 const CUSTOM_DEST = path.join(APP_DIR, 'custom-routes');
 
-if (!fs.existsSync(ROUTES_JS)) {
-    console.warn('[register-routes] routes.js not found at', ROUTES_JS);
+if (!ROUTES_JS) {
+    console.warn('[register-routes] routes.js not found at any candidate:', ROUTES_JS_CANDIDATES);
     return;
 }
+console.log('[register-routes] Found routes.js at', ROUTES_JS);
 if (!fs.existsSync(CUSTOM_SRC)) {
     console.warn('[register-routes] No custom routes dir at', CUSTOM_SRC);
     return;
