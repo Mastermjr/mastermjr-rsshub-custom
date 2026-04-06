@@ -13,10 +13,13 @@
  *   CMS-generated list pages; heading-links is a last-resort fallback. Nav-stripping
  *   first reduces false positives from navigation elements that share these patterns.
  */
-import { Route } from '@/types';
-import ofetch from '@/utils/ofetch';
-import { load, type CheerioAPI, type Element } from 'cheerio';
-import { parseDate } from '@/utils/parse-date';
+import { load } from 'cheerio';
+
+// Inline replacements for @/ imports (bundled RSSHub has no separate modules)
+type Route = { path: string; categories: string[]; example: string; parameters: Record<string, string>; features: Record<string, boolean>; name: string; maintainers: string[]; handler: Function; url: string };
+type CheerioAPI = ReturnType<typeof load>;
+async function ofetch(url: string): Promise<string> { const r = await fetch(url, { headers: { 'User-Agent': 'RSSHub/1.0' } }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }
+function parseDate(s: string): Date | undefined { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
 
 export const route: Route = {
     path: '/scrape/:url{.+}',

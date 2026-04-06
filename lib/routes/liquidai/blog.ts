@@ -5,10 +5,12 @@
  * @rationale Custom route produces higher-quality output than the generic scraper because
  *   it targets liquid.ai's exact HTML structure and date format directly.
  */
-import { Route } from '@/types';
-import ofetch from '@/utils/ofetch';
 import { load } from 'cheerio';
-import { parseDate } from '@/utils/parse-date';
+
+// Inline replacements for @/ imports (bundled RSSHub has no separate modules)
+type Route = { path: string; categories: string[]; example: string; parameters: Record<string, string>; features: Record<string, boolean>; name: string; maintainers: string[]; handler: Function; url: string; radar?: any[] };
+async function ofetch(url: string): Promise<string> { const r = await fetch(url, { headers: { 'User-Agent': 'RSSHub/1.0' } }); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); }
+function parseDate(s: string): Date | undefined { const d = new Date(s); return isNaN(d.getTime()) ? undefined : d; }
 
 export const route: Route = {
     path: '/blog/:category?',

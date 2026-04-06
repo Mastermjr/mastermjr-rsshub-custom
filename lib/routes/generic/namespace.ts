@@ -1,4 +1,4 @@
-import type { Namespace } from '@/types';
+type Namespace = { name: string; url: string; description?: string };
 
 export const namespace: Namespace = {
     name: 'Generic',
