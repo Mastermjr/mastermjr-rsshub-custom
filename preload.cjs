@@ -80,5 +80,146 @@ http.Server.prototype.emit = function(event, req, res) {
     return true;
   }
 
+  // Generic blog scraper — /generic/scrape/<encoded-url>
+  if (url.startsWith('/generic/scrape/')) {
+    handleGenericScrape(url, res);
+    return true;
+  }
+
   return _emit.apply(this, arguments);
 };
+
+// ============================================================
+// Generic Blog Scraper — implemented in preload to bypass RSSHub's
+// bundled route system which can't load custom .ts routes
+// ============================================================
+const cheerio = require('cheerio');
+
+const CONTAINER_SELS = ['article','[class*="post"]','[class*="blog"]','[class*="article"]','[class*="entry"]','[class*="card"]','[class*="item"]','.collection-item','[role="article"]'];
+const TITLE_SELS = ['h1 a','h2 a','h3 a','h2','h3','h4','[class*="title"]','[class*="heading"]'];
+const DATE_SELS = ['time','[datetime]','[class*="date"]','[class*="time"]','[class*="published"]','[class*="meta"]'];
+const DATE_RES = [/(\d{4})-(\d{2})-(\d{2})/,/(\w+ \d{1,2},? \d{4})/,/(\d{1,2})[./](\d{1,2})[./](\d{2,4})/,/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i,/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})/i];
+
+function tryDate(text) {
+  if (!text) return null;
+  for (const re of DATE_RES) {
+    const m = text.match(re);
+    if (m) {
+      if (re === DATE_RES[2]) {
+        const p = text.match(/(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);
+        if (p) { let y=p[3]; if(y.length===2)y='20'+y; const d=new Date(y+'-'+p[1].padStart(2,'0')+'-'+p[2].padStart(2,'0')); if(!isNaN(d))return d; }
+      }
+      const d = new Date(m[0]); if (!isNaN(d)) return d;
+    }
+  }
+  return null;
+}
+
+function resUrl(href, base) { try { return new URL(href, base).href; } catch { return href; } }
+
+function strat1($, base) {
+  const items = [], seen = new Set();
+  $('a:has(h2), a:has(h3)').each((_, el) => {
+    const $e = $(el), href = $e.attr('href'), title = $e.find('h2, h3').first().text().trim();
+    if (!title || !href || seen.has(href)) return; seen.add(href);
+    const dt = $e.find(DATE_SELS.join(',')).first().text() || $e.parent().text() || $e.next().text();
+    items.push({ title, link: resUrl(href, base), pubDate: tryDate(dt) });
+  });
+  return items;
+}
+
+function strat2($, base) {
+  const items = [], seen = new Set();
+  for (const sel of CONTAINER_SELS) {
+    const cs = $(sel); if (cs.length < 3) continue;
+    cs.each((_, el) => {
+      const $e = $(el); let title='', link='';
+      for (const ts of TITLE_SELS) { const $t=$e.find(ts).first(); if($t.length){title=$t.text().trim();link=$t.attr('href')||$t.closest('a').attr('href')||'';break;} }
+      if (!link && $e.is('a')) link = $e.attr('href')||'';
+      if (!title) { title=$e.find('a').first().text().trim(); link=link||$e.find('a').first().attr('href')||''; }
+      if (!title||title.length<5||title.length>300||!link||seen.has(link)) return; seen.add(link);
+      let pd = null;
+      for (const ds of DATE_SELS) { const $d=$e.find(ds).first(); if($d.length){pd=tryDate($d.attr('datetime')||$d.text());if(pd)break;} }
+      if (!pd) pd = tryDate($e.text());
+      items.push({ title, link: resUrl(link, base), pubDate: pd });
+    });
+    if (items.length >= 3) break; items.length = 0;
+  }
+  return items;
+}
+
+function strat3($, base) {
+  const items = [], seen = new Set();
+  $('h2 a, h3 a').each((_, el) => {
+    const $e = $(el), href = $e.attr('href'), title = $e.text().trim();
+    if (!title || !href || seen.has(href)) return; seen.add(href);
+    items.push({ title, link: resUrl(href, base), pubDate: tryDate($e.closest('div, section, li').text()) });
+  });
+  return items;
+}
+
+function escXml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function toRss(title, link, desc, items) {
+  const rssItems = items.map(i => {
+    let xml = `    <item>\n      <title>${escXml(i.title)}</title>\n      <link>${escXml(i.link)}</link>\n      <guid isPermaLink="true">${escXml(i.link)}</guid>\n`;
+    if (i.pubDate) xml += `      <pubDate>${i.pubDate.toUTCString()}</pubDate>\n`;
+    xml += `    </item>`;
+    return xml;
+  }).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n  <channel>\n    <title>${escXml(title)}</title>\n    <link>${escXml(link)}</link>\n    <description>${escXml(desc)}</description>\n${rssItems}\n  </channel>\n</rss>`;
+}
+
+async function handleGenericScrape(url, res) {
+  try {
+    // Check access key
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    // Extract target URL from path: /generic/scrape/<encoded-url>
+    const pathPart = url.split('?')[0];
+    const encoded = pathPart.replace('/generic/scrape/', '');
+    const targetUrl = decodeURIComponent(encoded);
+
+    let parsed;
+    try { parsed = new URL(targetUrl); } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Invalid URL: ' + targetUrl);
+      return;
+    }
+
+    // Fetch the page
+    const resp = await fetch(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSSHub/1.0)' } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    // Strip noise
+    $('nav, header, footer, aside, [role="navigation"], [class*="sidebar"], [class*="footer"], [class*="header"], [class*="nav"]').remove();
+
+    // Try strategies
+    let items = strat1($, parsed.origin);
+    if (items.length < 2) items = strat2($, parsed.origin);
+    if (items.length < 2) items = strat3($, parsed.origin);
+
+    // Deduplicate
+    const uniq = [...new Map(items.map(i => [i.link, i])).values()];
+    const filtered = uniq.filter(i => i.title.length >= 10 && !/^https?:\/\/[^/]+\/?$/.test(i.link));
+    const final = filtered.length > 0 ? filtered : uniq.slice(0, 30);
+
+    const pageTitle = $('title').text().trim() || $('h1').first().text().trim() || parsed.hostname;
+    const rss = toRss(pageTitle, targetUrl, 'Auto-generated feed for ' + targetUrl, final);
+
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Scrape error: ' + (err.message || err));
+  }
+}
