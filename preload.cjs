@@ -48,7 +48,12 @@ Generate Feed URL</a>
 <a href="https://docs.rsshub.app/guide/parameters" target="_blank" rel="noreferrer">Parameters</a>
 <a href="https://github.com/DIYgod/RSSHub" target="_blank" rel="noreferrer">GitHub</a>
 </div>
-<script>!function(){var k=new URLSearchParams(location.search).get("key");if(k)document.getElementById("__gen").href="/generate?key="+encodeURIComponent(k)}()</script>
+<script>!function(){
+var k=new URLSearchParams(location.search).get("key")||"";
+if(k){document.cookie="rsshub_key="+encodeURIComponent(k)+";path=/;max-age=31536000;SameSite=Lax"}
+if(!k){var m=document.cookie.match(/(?:^|; )rsshub_key=([^;]*)/);if(m)k=decodeURIComponent(m[1])}
+if(k){document.getElementById("__gen").href="/generate?key="+encodeURIComponent(k)}
+}()</script>
 </body>
 </html>`;
 
