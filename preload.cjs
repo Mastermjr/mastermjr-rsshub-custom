@@ -122,13 +122,48 @@ function tryDate(text) {
 
 function resUrl(href, base) { try { return new URL(href, base).href; } catch { return href; } }
 
+// Extract description snippet and image from the area around a blog item
+function extractMeta($, el, base) {
+  const $e = $(el);
+  // Search the element itself and its parent container for image and description
+  const $ctx = $e.parent().length ? $e.parent() : $e;
+
+  // Image: look for img in the context, prefer og-style or large images
+  let image = null;
+  const $img = $ctx.find('img').first();
+  if ($img.length) {
+    const src = $img.attr('src') || $img.attr('data-src') || $img.attr('data-lazy-src') || '';
+    if (src) image = resUrl(src, base);
+  }
+
+  // Description: find <p> text near the title, skip very short or date-like text
+  let desc = '';
+  const $ps = $ctx.find('p');
+  $ps.each((_, p) => {
+    if (desc) return;
+    const t = $(p).text().trim();
+    if (t.length >= 30 && t.length <= 500) desc = t;
+  });
+  // Fallback: any text in the container that isn't the title
+  if (!desc) {
+    const allText = $ctx.text().replace(/\s+/g, ' ').trim();
+    const titleText = $e.find('h2, h3, h4').first().text().trim();
+    const remaining = allText.replace(titleText, '').trim();
+    if (remaining.length >= 30 && remaining.length <= 500) desc = remaining;
+    else if (remaining.length > 500) desc = remaining.slice(0, 300) + '…';
+  }
+
+  return { image, description: desc };
+}
+
 function strat1($, base) {
   const items = [], seen = new Set();
   $('a:has(h2), a:has(h3)').each((_, el) => {
     const $e = $(el), href = $e.attr('href'), title = $e.find('h2, h3').first().text().trim();
     if (!title || !href || seen.has(href)) return; seen.add(href);
     const dt = $e.find(DATE_SELS.join(',')).first().text() || $e.parent().text() || $e.next().text();
-    items.push({ title, link: resUrl(href, base), pubDate: tryDate(dt) });
+    const meta = extractMeta($, el, base);
+    items.push({ title, link: resUrl(href, base), pubDate: tryDate(dt), description: meta.description, image: meta.image });
   });
   return items;
 }
@@ -146,7 +181,13 @@ function strat2($, base) {
       let pd = null;
       for (const ds of DATE_SELS) { const $d=$e.find(ds).first(); if($d.length){pd=tryDate($d.attr('datetime')||$d.text());if(pd)break;} }
       if (!pd) pd = tryDate($e.text());
-      items.push({ title, link: resUrl(link, base), pubDate: pd });
+      // For strat2, the container IS the context — extract directly from it
+      let image = null;
+      const $img = $e.find('img').first();
+      if ($img.length) { const s=$img.attr('src')||$img.attr('data-src')||''; if(s) image=resUrl(s,base); }
+      let desc = '';
+      $e.find('p').each((_,p)=>{ if(desc)return; const t=$(p).text().trim(); if(t.length>=30&&t.length<=500) desc=t; });
+      items.push({ title, link: resUrl(link, base), pubDate: pd, description: desc, image });
     });
     if (items.length >= 3) break; items.length = 0;
   }
@@ -158,7 +199,9 @@ function strat3($, base) {
   $('h2 a, h3 a').each((_, el) => {
     const $e = $(el), href = $e.attr('href'), title = $e.text().trim();
     if (!title || !href || seen.has(href)) return; seen.add(href);
-    items.push({ title, link: resUrl(href, base), pubDate: tryDate($e.closest('div, section, li').text()) });
+    const $ctx = $e.closest('div, section, li');
+    const meta = extractMeta($, $ctx.get(0) || el, base);
+    items.push({ title, link: resUrl(href, base), pubDate: tryDate($ctx.text()), description: meta.description, image: meta.image });
   });
   return items;
 }
@@ -169,6 +212,12 @@ function toRss(title, link, desc, items) {
   const rssItems = items.map(i => {
     let xml = `    <item>\n      <title>${escXml(i.title)}</title>\n      <link>${escXml(i.link)}</link>\n      <guid isPermaLink="true">${escXml(i.link)}</guid>\n`;
     if (i.pubDate) xml += `      <pubDate>${i.pubDate.toUTCString()}</pubDate>\n`;
+    // Build HTML description with image + text
+    let descHtml = '';
+    if (i.image) descHtml += `<img src="${escXml(i.image)}" style="max-width:100%;height:auto;margin-bottom:8px;" />`;
+    if (i.description) descHtml += `<p>${escXml(i.description)}</p>`;
+    if (descHtml) xml += `      <description>${escXml(descHtml)}</description>\n`;
+    if (i.image) xml += `      <enclosure url="${escXml(i.image)}" type="image/jpeg" length="0" />\n`;
     xml += `    </item>`;
     return xml;
   }).join('\n');
