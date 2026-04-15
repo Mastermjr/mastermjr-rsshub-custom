@@ -85,6 +85,12 @@ http.Server.prototype.emit = function(event, req, res) {
     return true;
   }
 
+  // Censys RSS proxy — WAF blocks blog pages but allows /feed/
+  if (url.startsWith('/censys/feed') || url.startsWith('/censys/rss')) {
+    handleRssProxy(url, res, 'https://censys.com/feed/', 'Censys');
+    return true;
+  }
+
   // Generic blog scraper — /generic/scrape/<encoded-url>
   if (url.startsWith('/generic/scrape/')) {
     handleGenericScrape(url, res);
@@ -363,5 +369,30 @@ async function handleGenericScrape(url, res) {
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('Scrape error: ' + (err.message || err));
+  }
+}
+
+// RSS proxy for WAF-protected sites that have native feeds
+async function handleRssProxy(url, res, feedUrl, name) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+    const resp = await fetch(feedUrl, { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+    } });
+    if (!resp.ok) throw new Error(`${name} feed returned HTTP ${resp.status}`);
+    const xml = await resp.text();
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(xml);
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'text/plain' });
+    res.end(`${name} feed proxy error: ${err.message || err}`);
   }
 }
