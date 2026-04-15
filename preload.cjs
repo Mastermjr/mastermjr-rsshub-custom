@@ -122,6 +122,86 @@ function tryDate(text) {
 
 function resUrl(href, base) { try { return new URL(href, base).href; } catch { return href; } }
 
+// Strategy 0: Extract from __NEXT_DATA__ JSON (Next.js sites)
+// Many modern blogs use Next.js and embed structured post data in the page
+function stratNextData($, base) {
+  const script = $('#__NEXT_DATA__').html();
+  if (!script) return [];
+  let data;
+  try { data = JSON.parse(script); } catch { return []; }
+
+  // Walk the props tree to find arrays of post-like objects
+  const posts = findPostArray(data);
+  if (!posts || !posts.length) return [];
+
+  return posts.map(p => {
+    const title = p.title || p.headline || p.name || '';
+    if (!title || title.length < 5) return null;
+    const slug = p.urlAlias || p.slug || p.path || p.url || p.href || '';
+    const link = slug ? resUrl(slug, base) : '';
+    if (!link) return null;
+    const dateStr = p.createdDate || p.created_at || p.publishedAt || p.date || p.published || p.createdAt || '';
+    const pubDate = dateStr ? new Date(dateStr) : (p.created ? new Date(Number(p.created) * 1000) : null);
+    const image = p.socialMediaMetaImage || p.featuredImage || p.thumbnail || p.image || p.cover || p.og_image || extractNestedImage(p) || null;
+    const description = p.subtitle || p.excerpt || p.summary || p.description || p.teaser || '';
+    return { title, link, pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null, image, description };
+  }).filter(Boolean);
+}
+
+// Recursively find an array that looks like blog posts
+function findPostArray(obj, depth) {
+  if (depth === undefined) depth = 0;
+  if (depth > 6 || !obj || typeof obj !== 'object') return null;
+  // Direct array of post objects
+  if (Array.isArray(obj)) {
+    if (obj.length >= 2 && obj[0] && typeof obj[0] === 'object' && (obj[0].title || obj[0].headline || obj[0].name)) {
+      // Verify it has link-like fields too
+      const first = obj[0];
+      if (first.urlAlias || first.slug || first.path || first.url || first.href) return obj;
+    }
+    return null;
+  }
+  // Check known keys first
+  for (const key of ['posts', 'articles', 'blogs', 'items', 'entries', 'results', 'nodes', 'edges', 'data']) {
+    if (obj[key]) { const r = findPostArray(obj[key], depth + 1); if (r) return r; }
+  }
+  // Then recurse all keys
+  for (const key of Object.keys(obj)) {
+    if (['posts','articles','blogs','items','entries','results','nodes','edges','data'].includes(key)) continue;
+    const val = obj[key];
+    if (val && typeof val === 'object') { const r = findPostArray(val, depth + 1); if (r) return r; }
+  }
+  return null;
+}
+
+// Extract image URL from nested objects (heroImage, image, etc.)
+function extractNestedImage(obj) {
+  for (const key of ['heroImage', 'coverImage', 'featuredMedia', 'media']) {
+    const val = obj[key];
+    if (!val || typeof val !== 'object') continue;
+    // Walk to find a URL string
+    const url = findImageUrl(val, 0);
+    if (url) return url;
+  }
+  return null;
+}
+
+function findImageUrl(obj, depth) {
+  if (depth > 4) return null;
+  if (typeof obj === 'string' && /^https?:\/\/.*\.(jpg|jpeg|png|webp|gif|svg)/i.test(obj)) return obj;
+  if (typeof obj !== 'object' || !obj) return null;
+  // Check common keys
+  for (const k of ['url', 'src', 'srcset', 'href', 'default', 'original', 'large', 'medium']) {
+    if (obj[k]) { const r = findImageUrl(obj[k], depth + 1); if (r) return r; }
+  }
+  if (Array.isArray(obj)) {
+    for (const item of obj.slice(0, 3)) { const r = findImageUrl(item, depth + 1); if (r) return r; }
+  } else {
+    for (const k of Object.keys(obj).slice(0, 10)) { const r = findImageUrl(obj[k], depth + 1); if (r) return r; }
+  }
+  return null;
+}
+
 // Extract description snippet and image from the area around a blog item
 function extractMeta($, el, base) {
   const $e = $(el);
@@ -254,13 +334,17 @@ async function handleGenericScrape(url, res) {
     const html = await resp.text();
     const $ = cheerio.load(html);
 
-    // Strip noise
-    $('nav, header, footer, aside, [role="navigation"], [class*="sidebar"], [class*="footer"], [class*="header"], [class*="nav"]').remove();
+    // Try __NEXT_DATA__ first (structured data, best quality)
+    let items = stratNextData($, parsed.origin);
 
-    // Try strategies
-    let items = strat1($, parsed.origin);
-    if (items.length < 2) items = strat2($, parsed.origin);
-    if (items.length < 2) items = strat3($, parsed.origin);
+    // Fall back to HTML heuristics
+    if (items.length < 2) {
+      // Strip noise before HTML strategies
+      $('nav, header, footer, aside, [role="navigation"], [class*="sidebar"], [class*="footer"], [class*="header"], [class*="nav"]').remove();
+      items = strat1($, parsed.origin);
+      if (items.length < 2) items = strat2($, parsed.origin);
+      if (items.length < 2) items = strat3($, parsed.origin);
+    }
 
     // Deduplicate
     const uniq = [...new Map(items.map(i => [i.link, i])).values()];
