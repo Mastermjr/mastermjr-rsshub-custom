@@ -85,19 +85,17 @@ http.Server.prototype.emit = function(event, req, res) {
     return true;
   }
 
-  // Censys RSS proxy — /censys/:category? (WAF blocks pages but allows /feed/)
-  // /censys → all posts, /censys/research, /censys/threat-intelligence, /censys/rapid-response
+  // Censys routes — WAF blocks HTML but REST API and /feed/ work
   if (url.startsWith('/censys')) {
     const censysPath = url.split('?')[0].replace(/\/$/, '');
-    const CENSYS_FEEDS = {
-      '/censys': 'https://censys.com/feed/',
-      '/censys/feed': 'https://censys.com/feed/',
-      '/censys/research': 'https://censys.com/tag/research/feed/',
-      '/censys/threat-intelligence': 'https://censys.com/tag/threat-intelligence/feed/',
-      '/censys/rapid-response': 'https://censys.com/tag/rapid-response/feed/',
-    };
-    const feedUrl = CENSYS_FEEDS[censysPath];
-    if (feedUrl) { handleRssProxy(url, res, feedUrl, 'Censys'); return true; }
+    if (censysPath === '/censys' || censysPath === '/censys/feed') {
+      handleRssProxy(url, res, 'https://censys.com/feed/', 'Censys');
+      return true;
+    }
+    if (censysPath === '/censys/rapid-response') {
+      handleCensysAdvisories(url, res);
+      return true;
+    }
   }
 
   // Generic blog scraper — /generic/scrape/<encoded-url>
@@ -403,5 +401,52 @@ async function handleRssProxy(url, res, feedUrl, name) {
   } catch (err) {
     res.writeHead(502, { 'Content-Type': 'text/plain' });
     res.end(`${name} feed proxy error: ${err.message || err}`);
+  }
+}
+
+// Censys Rapid Response Advisories — fetched via WP REST API (advisory post type)
+async function handleCensysAdvisories(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    const apiUrl = 'https://censys.com/wp-json/wp/v2/advisory?per_page=20&orderby=date&order=desc';
+    const resp = await fetch(apiUrl, { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
+    } });
+    if (!resp.ok) throw new Error('Censys API returned HTTP ' + resp.status);
+    const advisories = await resp.json();
+
+    const items = advisories.map(a => {
+      const title = (a.title && a.title.rendered) || '';
+      const link = a.link || '';
+      const pubDate = a.date_gmt ? new Date(a.date_gmt + 'Z') : null;
+      // Extract first paragraph from content as description
+      let desc = '';
+      if (a.content && a.content.rendered) {
+        const pMatch = a.content.rendered.match(/<p[^>]*>(.*?)<\/p>/s);
+        if (pMatch) desc = pMatch[1].replace(/<[^>]+>/g, '').trim().slice(0, 300);
+      }
+      return { title, link, pubDate, description: desc, image: null };
+    }).filter(i => i.title && i.link);
+
+    const rss = toRss(
+      'Censys Rapid Response Advisories',
+      'https://censys.com/censys-arc/rapid-response-advisories/',
+      'Censys rapid response security advisories for critical vulnerabilities',
+      items
+    );
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'text/plain' });
+    res.end('Censys advisories error: ' + (err.message || err));
   }
 }
