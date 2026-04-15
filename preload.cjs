@@ -85,10 +85,19 @@ http.Server.prototype.emit = function(event, req, res) {
     return true;
   }
 
-  // Censys RSS proxy — WAF blocks blog pages but allows /feed/
-  if (url.startsWith('/censys/feed') || url.startsWith('/censys/rss')) {
-    handleRssProxy(url, res, 'https://censys.com/feed/', 'Censys');
-    return true;
+  // Censys RSS proxy — /censys/:category? (WAF blocks pages but allows /feed/)
+  // /censys → all posts, /censys/research, /censys/threat-intelligence, /censys/rapid-response
+  if (url.startsWith('/censys')) {
+    const censysPath = url.split('?')[0].replace(/\/$/, '');
+    const CENSYS_FEEDS = {
+      '/censys': 'https://censys.com/feed/',
+      '/censys/feed': 'https://censys.com/feed/',
+      '/censys/research': 'https://censys.com/tag/research/feed/',
+      '/censys/threat-intelligence': 'https://censys.com/tag/threat-intelligence/feed/',
+      '/censys/rapid-response': 'https://censys.com/tag/rapid-response/feed/',
+    };
+    const feedUrl = CENSYS_FEEDS[censysPath];
+    if (feedUrl) { handleRssProxy(url, res, feedUrl, 'Censys'); return true; }
   }
 
   // Generic blog scraper — /generic/scrape/<encoded-url>
