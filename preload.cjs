@@ -101,7 +101,7 @@ http.Server.prototype.emit = function(event, req, res) {
 const cheerio = require('cheerio');
 
 const CONTAINER_SELS = ['article','[class*="post"]','[class*="blog"]','[class*="article"]','[class*="entry"]','[class*="card"]','[class*="item"]','.collection-item','[role="article"]'];
-const TITLE_SELS = ['h1 a','h2 a','h3 a','h2','h3','h4','[class*="title"]','[class*="heading"]'];
+const TITLE_SELS = ['h1 a','h2 a','h3 a','h4 a','h5 a','h2','h3','h4','h5','[class*="title"]','[class*="heading"]'];
 const DATE_SELS = ['time','[datetime]','[class*="date"]','[class*="time"]','[class*="published"]','[class*="meta"]'];
 const DATE_RES = [/(\d{4})-(\d{2})-(\d{2})/,/(\w+ \d{1,2},? \d{4})/,/(\d{1,2})[./](\d{1,2})[./](\d{2,4})/,/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{4})/i,/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+(\d{1,2}),?\s+(\d{4})/i];
 
@@ -238,8 +238,8 @@ function extractMeta($, el, base) {
 
 function strat1($, base) {
   const items = [], seen = new Set();
-  $('a:has(h2), a:has(h3)').each((_, el) => {
-    const $e = $(el), href = $e.attr('href'), title = $e.find('h2, h3').first().text().trim();
+  $('a:has(h2), a:has(h3), a:has(h4), a:has(h5)').each((_, el) => {
+    const $e = $(el), href = $e.attr('href'), title = $e.find('h2, h3, h4, h5').first().text().trim();
     if (!title || !href || seen.has(href)) return; seen.add(href);
     const dt = $e.find(DATE_SELS.join(',')).first().text() || $e.parent().text() || $e.next().text();
     const meta = extractMeta($, el, base);
@@ -276,7 +276,7 @@ function strat2($, base) {
 
 function strat3($, base) {
   const items = [], seen = new Set();
-  $('h2 a, h3 a').each((_, el) => {
+  $('h2 a, h3 a, h4 a, h5 a').each((_, el) => {
     const $e = $(el), href = $e.attr('href'), title = $e.text().trim();
     if (!title || !href || seen.has(href)) return; seen.add(href);
     const $ctx = $e.closest('div, section, li');
@@ -329,7 +329,11 @@ async function handleGenericScrape(url, res) {
     }
 
     // Fetch the page
-    const resp = await fetch(targetUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RSSHub/1.0)' } });
+    const resp = await fetch(targetUrl, { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+    } });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const html = await resp.text();
     const $ = cheerio.load(html);
