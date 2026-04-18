@@ -98,6 +98,12 @@ http.Server.prototype.emit = function(event, req, res) {
     }
   }
 
+  // Prime Intellect blog — /primeintellect
+  if (url.startsWith('/primeintellect')) {
+    handlePrimeIntellect(url, res);
+    return true;
+  }
+
   // Generic blog scraper — /generic/scrape/<encoded-url>
   if (url.startsWith('/generic/scrape/')) {
     handleGenericScrape(url, res);
@@ -448,5 +454,85 @@ async function handleCensysAdvisories(url, res) {
   } catch (err) {
     res.writeHead(502, { 'Content-Type': 'text/plain' });
     res.end('Censys advisories error: ' + (err.message || err));
+  }
+}
+
+// Prime Intellect blog — custom parser for their headless div-based layout
+async function handlePrimeIntellect(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    const resp = await fetch('https://www.primeintellect.ai/blog', { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html',
+    } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    // Each post is: <a class="block" href="/blog/slug"> with img[alt] and date in <p>
+    const items = [];
+    const seen = new Set();
+    $('a[href^="/blog/"]').each((_, el) => {
+      const $a = $(el);
+      const href = $a.attr('href');
+      if (!href || href === '/blog' || href === '/blog/' || seen.has(href)) return;
+      seen.add(href);
+
+      // Title from img alt or from the text-base div
+      const img = $a.find('img').first();
+      const title = (img.attr('alt') || '').trim()
+        || $a.find('.text-base, .text-lg, .text-xl').first().text().trim()
+        || $a.text().replace(/\s+/g, ' ').trim().slice(0, 100);
+      if (!title || title.length < 10) return;
+
+      // Date from small text paragraph
+      const dateText = $a.find('p').last().text().trim();
+      const pubDate = dateText ? new Date(dateText) : null;
+
+      // Image from srcSet or src
+      let image = null;
+      if (img.length) {
+        const srcSet = img.attr('srcset') || '';
+        const srcMatch = srcSet.match(/(\/_next\/image\?url=[^\s]+\s+1080w)/);
+        if (srcMatch) {
+          image = 'https://www.primeintellect.ai' + srcMatch[1].replace(/\s+\d+w$/, '');
+        } else {
+          const src = img.attr('src') || '';
+          if (src) image = src.startsWith('/') ? 'https://www.primeintellect.ai' + src : src;
+        }
+      }
+
+      // Category tag
+      const category = $a.find('.text-sm').first().text().trim();
+      const desc = category ? category : '';
+
+      items.push({
+        title,
+        link: 'https://www.primeintellect.ai' + href,
+        pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null,
+        image,
+        description: desc,
+      });
+    });
+
+    const rss = toRss(
+      'Prime Intellect Blog',
+      'https://www.primeintellect.ai/blog',
+      'Prime Intellect - open source AI research and decentralized training',
+      items
+    );
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Prime Intellect error: ' + (err.message || err));
   }
 }
