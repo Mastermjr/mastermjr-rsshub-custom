@@ -98,6 +98,12 @@ http.Server.prototype.emit = function(event, req, res) {
     }
   }
 
+  // Arcee AI blog — /arcee
+  if (url.startsWith('/arcee')) {
+    handleArcee(url, res);
+    return true;
+  }
+
   // Prime Intellect blog — /primeintellect
   if (url.startsWith('/primeintellect')) {
     handlePrimeIntellect(url, res);
@@ -534,5 +540,88 @@ async function handlePrimeIntellect(url, res) {
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('Prime Intellect error: ' + (err.message || err));
+  }
+}
+
+// Arcee AI blog — Webflow site with fs-list-field attributes
+// Structure: <a class="blog-post_link" href="/blog/slug">
+//   <img .../> (thumbnail)
+//   <div class="blog-post_header-details">
+//     <div fs-list-field="category">Category</div> • <div>April 14, 2026</div>
+//   </div>
+//   <h2 fs-list-field="title">Title</h2>
+//   <p fs-list-field="desc">Description</p>
+// </a>
+async function handleArcee(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    const resp = await fetch('https://www.arcee.ai/blog', { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html',
+    } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    const items = [];
+    const seen = new Set();
+    $('a.blog-post_link[href^="/blog/"]').each((_, el) => {
+      const $a = $(el);
+      const href = $a.attr('href');
+      if (!href || seen.has(href)) return;
+      seen.add(href);
+
+      const title = $a.find('[fs-list-field="title"]').text().trim();
+      if (!title || title.length < 5) return;
+
+      const description = $a.find('[fs-list-field="desc"]').text().trim();
+      const category = $a.find('[fs-list-field="category"]').text().trim();
+
+      // Date is the last .text-size-tiny in the header-details that looks like a date
+      let pubDate = null;
+      $a.find('.blog-post_header-details .text-size-tiny').each((_, d) => {
+        const t = $(d).text().trim();
+        // Match "April 14, 2026" or "October 31, 2025" etc.
+        if (/^[A-Z][a-z]+ \d{1,2},? \d{4}$/.test(t)) {
+          pubDate = new Date(t);
+        }
+      });
+
+      // Image
+      let image = null;
+      const $img = $a.find('img').first();
+      if ($img.length) {
+        const src = $img.attr('src') || '';
+        if (src) image = src.startsWith('/') ? 'https://www.arcee.ai' + src : src;
+      }
+
+      items.push({
+        title,
+        link: 'https://www.arcee.ai' + href,
+        pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null,
+        image,
+        description: description || category || '',
+      });
+    });
+
+    const rss = toRss(
+      'Arcee AI Blog',
+      'https://www.arcee.ai/blog',
+      'Arcee AI - open source language models, merging, and enterprise AI',
+      items
+    );
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Arcee error: ' + (err.message || err));
   }
 }
