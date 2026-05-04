@@ -143,9 +143,11 @@ function tryDate(text) {
     if (m) {
       if (re === DATE_RES[2]) {
         const p = text.match(/(\d{1,2})[./](\d{1,2})[./](\d{2,4})/);
-        if (p) { let y=p[3]; if(y.length===2)y='20'+y; const d=new Date(y+'-'+p[1].padStart(2,'0')+'-'+p[2].padStart(2,'0')); if(!isNaN(d))return d; }
+        if (p) { let y=p[3]; if(y.length===2)y='20'+y; const d=new Date(y+'-'+p[1].padStart(2,'0')+'-'+p[2].padStart(2,'0')+'T12:00:00'); if(!isNaN(d))return d; }
       }
-      const d = new Date(m[0]); if (!isNaN(d)) return d;
+      // Add T12:00:00 to date-only strings to avoid timezone off-by-one
+      const dateStr = m[0] + (/T\d/.test(m[0]) ? '' : ' 12:00:00');
+      const d = new Date(dateStr); if (!isNaN(d)) return d;
     }
   }
   return null;
@@ -323,11 +325,11 @@ function toRss(title, link, desc, items) {
   const rssItems = items.map(i => {
     let xml = `    <item>\n      <title>${escXml(i.title)}</title>\n      <link>${escXml(i.link)}</link>\n      <guid isPermaLink="true">${escXml(i.link)}</guid>\n`;
     if (i.pubDate) xml += `      <pubDate>${i.pubDate.toUTCString()}</pubDate>\n`;
-    // Build HTML description with image + text
+    // Build HTML description with image + text (wrapped in CDATA to avoid double-escape)
     let descHtml = '';
-    if (i.image) descHtml += `<img src="${escXml(i.image)}" style="max-width:100%;height:auto;margin-bottom:8px;" />`;
+    if (i.image) descHtml += `<img src="${i.image}" style="max-width:100%;height:auto;margin-bottom:8px;" />`;
     if (i.description) descHtml += `<p>${escXml(i.description)}</p>`;
-    if (descHtml) xml += `      <description>${escXml(descHtml)}</description>\n`;
+    if (descHtml) xml += `      <description><![CDATA[${descHtml}]]></description>\n`;
     if (i.image) xml += `      <enclosure url="${escXml(i.image)}" type="image/jpeg" length="0" />\n`;
     xml += `    </item>`;
     return xml;
@@ -676,7 +678,8 @@ async function handleUnsloth(url, res) {
       $parent.find('span').each((_, sp) => {
         const st = $(sp).text().trim();
         if (/^[A-Z][a-z]{2,8} \d{1,2},? \d{4}$/.test(st)) {
-          pubDate = new Date(st);
+          // Add T12:00:00 to avoid timezone off-by-one when parsing dates without time
+          pubDate = new Date(st + ' 12:00:00');
         }
       });
 
