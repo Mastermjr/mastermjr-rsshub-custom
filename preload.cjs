@@ -663,46 +663,61 @@ async function handleUnsloth(url, res) {
     const items = [];
     const seen = new Set();
 
-    // Find all text links to /blog/ (not image links)
-    $('a[href^="/blog/"]').each((_, el) => {
+    // Collect from /blog/, /docs/models/, /docs/new/ (all content on the blog page)
+    const selectors = 'a[href^="/blog/"], a[href^="https://unsloth.ai/docs/models/"], a[href^="https://unsloth.ai/docs/new/"]';
+    $(selectors).each((_, el) => {
       const $a = $(el);
-      const href = $a.attr('href');
-      if (!href || href === '/blog' || href === '/blog/' || seen.has(href)) return;
+      let href = $a.attr('href') || '';
+      // Normalize to absolute
+      if (href.startsWith('/')) href = 'https://unsloth.ai' + href;
+      // Skip nav/generic links
+      if (href === 'https://unsloth.ai/blog' || href === 'https://unsloth.ai/blog/' || seen.has(href)) return;
+      if (href === 'https://unsloth.ai/docs/models/tutorials') return; // nav link
+      if (href.endsWith('/unsloth-studio')) return; // nav link
 
-      // Skip image-only links (contain <img> but no meaningful text)
+      // Skip image-only links
       const text = $a.text().trim();
       if (!text || text.length < 5) return;
 
       seen.add(href);
-      const title = text;
 
-      // Date: look for sibling span.w-text with date pattern
+      // Date: look for sibling span with date pattern
       let pubDate = null;
       const $parent = $a.parent();
       $parent.find('span').each((_, sp) => {
         const st = $(sp).text().trim();
         if (/^[A-Z][a-z]{2,8} \d{1,2},? \d{4}$/.test(st)) {
-          // Add T12:00:00 to avoid timezone off-by-one when parsing dates without time
           pubDate = new Date(st + ' 12:00:00');
         }
       });
 
-      // Image: find the image link with same href in a nearby container
+      // Image: find img in a sibling link with same href
       let image = null;
-      const $container = $a.closest('[class*="w-box"]').parent();
-      const $imgLink = $container.find(`a[href="${href}"] img`).first();
-      if ($imgLink.length) {
-        const src = $imgLink.attr('src') || '';
-        if (src) image = src.startsWith('/') ? 'https://unsloth.ai' + src.split('?')[0] + '?width=640&quality=80&format=auto' : src;
+      const $container = $a.closest('[class*="w-box"]')?.parent();
+      if ($container && $container.length) {
+        const escapedHref = href.replace(/'/g, "\\'");
+        const $imgLink = $container.find(`a[href="${$a.attr('href')}"] img, a[href="${href}"] img`).first();
+        if ($imgLink.length) {
+          const src = $imgLink.attr('src') || '';
+          if (src) image = (src.startsWith('/') ? 'https://unsloth.ai' : '') + src.split('?')[0] + '?width=640&quality=80&format=auto';
+        }
       }
 
       items.push({
-        title,
-        link: 'https://unsloth.ai' + href,
+        title: text,
+        link: href,
         pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null,
         image,
         description: '',
       });
+    });
+
+    // Sort by date (newest first), items without dates go to end
+    items.sort((a, b) => {
+      if (!a.pubDate && !b.pubDate) return 0;
+      if (!a.pubDate) return 1;
+      if (!b.pubDate) return -1;
+      return b.pubDate - a.pubDate;
     });
 
     const rss = toRss(
