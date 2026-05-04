@@ -98,6 +98,12 @@ http.Server.prototype.emit = function(event, req, res) {
     }
   }
 
+  // Unsloth blog — /unsloth
+  if (url.startsWith('/unsloth')) {
+    handleUnsloth(url, res);
+    return true;
+  }
+
   // Arcee AI blog — /arcee
   if (url.startsWith('/arcee')) {
     handleArcee(url, res);
@@ -623,5 +629,85 @@ async function handleArcee(url, res) {
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('Arcee error: ' + (err.message || err));
+  }
+}
+
+// Unsloth blog — no headings, titles are plain <a> link text with sibling <span> dates
+// Structure: <a href="/blog/slug">Title text</a><span class="w-text">Mar 13, 2026</span>
+// Image link: separate <a href="/blog/slug"><img src="..."/></a> before the text link
+async function handleUnsloth(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    const resp = await fetch('https://unsloth.ai/blog', { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html',
+    } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    const items = [];
+    const seen = new Set();
+
+    // Find all text links to /blog/ (not image links)
+    $('a[href^="/blog/"]').each((_, el) => {
+      const $a = $(el);
+      const href = $a.attr('href');
+      if (!href || href === '/blog' || href === '/blog/' || seen.has(href)) return;
+
+      // Skip image-only links (contain <img> but no meaningful text)
+      const text = $a.text().trim();
+      if (!text || text.length < 5) return;
+
+      seen.add(href);
+      const title = text;
+
+      // Date: look for sibling span.w-text with date pattern
+      let pubDate = null;
+      const $parent = $a.parent();
+      $parent.find('span').each((_, sp) => {
+        const st = $(sp).text().trim();
+        if (/^[A-Z][a-z]{2,8} \d{1,2},? \d{4}$/.test(st)) {
+          pubDate = new Date(st);
+        }
+      });
+
+      // Image: find the image link with same href in a nearby container
+      let image = null;
+      const $container = $a.closest('[class*="w-box"]').parent();
+      const $imgLink = $container.find(`a[href="${href}"] img`).first();
+      if ($imgLink.length) {
+        const src = $imgLink.attr('src') || '';
+        if (src) image = src.startsWith('/') ? 'https://unsloth.ai' + src.split('?')[0] + '?width=640&quality=80&format=auto' : src;
+      }
+
+      items.push({
+        title,
+        link: 'https://unsloth.ai' + href,
+        pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null,
+        image,
+        description: '',
+      });
+    });
+
+    const rss = toRss(
+      'Unsloth Blog',
+      'https://unsloth.ai/blog',
+      'Unsloth - fast and memory-efficient LLM fine-tuning',
+      items
+    );
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Unsloth error: ' + (err.message || err));
   }
 }
