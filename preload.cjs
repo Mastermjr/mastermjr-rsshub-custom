@@ -325,16 +325,20 @@ function toRss(title, link, desc, items) {
   const rssItems = items.map(i => {
     let xml = `    <item>\n      <title>${escXml(i.title)}</title>\n      <link>${escXml(i.link)}</link>\n      <guid isPermaLink="true">${escXml(i.link)}</guid>\n`;
     if (i.pubDate) xml += `      <pubDate>${i.pubDate.toUTCString()}</pubDate>\n`;
-    // Build HTML description with image + text (wrapped in CDATA to avoid double-escape)
-    let descHtml = '';
-    if (i.image) descHtml += `<img src="${i.image}" style="max-width:100%;height:auto;margin-bottom:8px;" />`;
-    if (i.description) descHtml += `<p>${escXml(i.description)}</p>`;
-    if (descHtml) xml += `      <description><![CDATA[${descHtml}]]></description>\n`;
-    if (i.image) xml += `      <enclosure url="${escXml(i.image)}" type="image/jpeg" length="0" />\n`;
+    // content:encoded for full HTML rendering in readers like NewsBlur
+    let contentHtml = '';
+    if (i.image) contentHtml += `<p><img src="${i.image}" style="max-width:100%;height:auto;" /></p>`;
+    if (i.description) contentHtml += `<p>${i.description}</p>`;
+    if (contentHtml) xml += `      <content:encoded><![CDATA[${contentHtml}]]></content:encoded>\n`;
+    // description as plain text fallback
+    if (i.description) xml += `      <description>${escXml(i.description)}</description>\n`;
+    // media:content for image thumbnails in readers
+    if (i.image) xml += `      <media:content url="${escXml(i.image)}" medium="image" />\n`;
+    if (i.image) xml += `      <media:thumbnail url="${escXml(i.image)}" />\n`;
     xml += `    </item>`;
     return xml;
   }).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n  <channel>\n    <title>${escXml(title)}</title>\n    <link>${escXml(link)}</link>\n    <description>${escXml(desc)}</description>\n${rssItems}\n  </channel>\n</rss>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:media="http://search.yahoo.com/mrss/" xmlns:atom="http://www.w3.org/2005/Atom">\n  <channel>\n    <title>${escXml(title)}</title>\n    <link>${escXml(link)}</link>\n    <description>${escXml(desc)}</description>\n${rssItems}\n  </channel>\n</rss>`;
 }
 
 async function handleGenericScrape(url, res) {
