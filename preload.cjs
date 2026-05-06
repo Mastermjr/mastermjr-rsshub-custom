@@ -663,39 +663,36 @@ async function handleUnsloth(url, res) {
     const items = [];
     const seen = new Set();
 
-    // Collect from /blog/, /docs/models/, /docs/new/ (all content on the blog page)
-    const selectors = 'a[href^="/blog/"], a[href^="https://unsloth.ai/docs/models/"], a[href^="https://unsloth.ai/docs/new/"]';
-    $(selectors).each((_, el) => {
+    // Capture ALL Webflow text-link cards that have a date sibling.
+    // The date span is the reliable discriminator — only blog post cards have one.
+    $('a.w-link').each((_, el) => {
       const $a = $(el);
       let href = $a.attr('href') || '';
-      // Normalize to absolute
-      if (href.startsWith('/')) href = 'https://unsloth.ai' + href;
-      // Skip nav/generic links
-      if (href === 'https://unsloth.ai/blog' || href === 'https://unsloth.ai/blog/' || seen.has(href)) return;
-      if (href === 'https://unsloth.ai/docs/models/tutorials') return; // nav link
-      if (href.endsWith('/unsloth-studio')) return; // nav link
-
-      // Skip image-only links
       const text = $a.text().trim();
-      if (!text || text.length < 5) return;
+      if (!href || text.length < 5) return;
 
-      seen.add(href);
-
-      // Date: look for sibling span with date pattern
+      // Date: must have a sibling span with date pattern (this filters out nav/footer)
       let pubDate = null;
+      let dateText = '';
       const $parent = $a.parent();
       $parent.find('span').each((_, sp) => {
         const st = $(sp).text().trim();
         if (/^[A-Z][a-z]{2,8} \d{1,2},? \d{4}$/.test(st)) {
+          dateText = st;
           pubDate = new Date(st + ' 12:00:00');
         }
       });
+      if (!dateText) return; // no date = not a content card
+
+      // Normalize URL to absolute
+      if (href.startsWith('/')) href = 'https://unsloth.ai' + href;
+      if (seen.has(href)) return;
+      seen.add(href);
 
       // Image: find img in a sibling link with same href
       let image = null;
       const $container = $a.closest('[class*="w-box"]')?.parent();
       if ($container && $container.length) {
-        const escapedHref = href.replace(/'/g, "\\'");
         const $imgLink = $container.find(`a[href="${$a.attr('href')}"] img, a[href="${href}"] img`).first();
         if ($imgLink.length) {
           const src = $imgLink.attr('src') || '';
