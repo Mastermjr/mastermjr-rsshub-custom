@@ -712,13 +712,8 @@ async function handleUnsloth(url, res) {
       });
     });
 
-    // Sort by date (newest first), items without dates go to end
-    items.sort((a, b) => {
-      if (!a.pubDate && !b.pubDate) return 0;
-      if (!a.pubDate) return 1;
-      if (!b.pubDate) return -1;
-      return b.pubDate - a.pubDate;
-    });
+    // Preserve DOM order — matches the website's curated order exactly
+    // (Unsloth orders by featured/curated, not strictly by date)
 
     const rss = toRss(
       'Unsloth Blog',
