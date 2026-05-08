@@ -116,6 +116,18 @@ http.Server.prototype.emit = function(event, req, res) {
     return true;
   }
 
+  // Edera blog — /edera
+  if (url.startsWith('/edera')) {
+    handleEdera(url, res);
+    return true;
+  }
+
+  // Dreadnode research — /dreadnode
+  if (url.startsWith('/dreadnode')) {
+    handleDreadnode(url, res);
+    return true;
+  }
+
   // Generic blog scraper — /generic/scrape/<encoded-url>
   if (url.startsWith('/generic/scrape/')) {
     handleGenericScrape(url, res);
@@ -723,5 +735,198 @@ async function handleUnsloth(url, res) {
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('Unsloth error: ' + (err.message || err));
+  }
+}
+
+// Edera blog — combines three sources for maximum coverage:
+// 1. Featured blog-card2 cards (top 3 with images, may include newest post)
+// 2. JSON-LD BlogPosting data (10 posts with dates, some with images)
+// 3. blog_item list entries (7 more posts with titles + dates)
+async function handleEdera(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    const resp = await fetch('https://edera.dev/stories', { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html',
+    } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    const byUrl = new Map(); // url -> item, preserves best data per post
+
+    // Source 1: Featured blog-card2 cards (newest posts, have images)
+    $('.blog-card2').each((_, el) => {
+      const $card = $(el);
+      const href = $card.find('a[href^="/stories/"]').first().attr('href') || '';
+      if (!href) return;
+      const title = $card.find('.blog-card2_paragraph').first().text().trim();
+      if (!title || title.length < 5) return;
+      let pubDate = null;
+      $card.find('p').each((_, p) => {
+        const t = $(p).text().trim();
+        if (/^[A-Z][a-z]{2,8} \d{1,2},? \d{4}$/.test(t)) {
+          pubDate = new Date(t + ' 12:00:00');
+        }
+      });
+      let image = null;
+      const $img = $card.find('img').first();
+      if ($img.length) {
+        const src = $img.attr('src') || '';
+        if (src) image = src.startsWith('/') ? 'https://edera.dev' + src : src;
+      }
+      const link = 'https://edera.dev' + href;
+      byUrl.set(link, { title, link, pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null, image, description: '' });
+    });
+
+    // Source 2: JSON-LD BlogPosting structured data
+    $('script[type="application/ld+json"]').each((_, el) => {
+      try {
+        const data = JSON.parse($(el).html());
+        if (data['@type'] === 'Blog' && data.blogPost) {
+          for (const p of data.blogPost) {
+            const link = p.url ? (p.url.startsWith('/') ? 'https://edera.dev' + p.url : p.url) : '';
+            if (!link || !p.headline) continue;
+            const pubDate = p.datePublished ? new Date(p.datePublished) : null;
+            const image = p.image || null;
+            const existing = byUrl.get(link);
+            if (existing) {
+              // Supplement with JSON-LD data if better
+              if (!existing.pubDate && pubDate) existing.pubDate = pubDate;
+              if (!existing.image && image) existing.image = image;
+            } else {
+              byUrl.set(link, { title: p.headline, link, pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null, image, description: '' });
+            }
+          }
+        }
+      } catch {}
+    });
+
+    // Source 3: blog_item list entries (title + date from text)
+    $('.blog_item.w-dyn-item').each((_, el) => {
+      const $item = $(el);
+      const href = $item.find('a[href^="/stories/"]').first().attr('href') || '';
+      if (!href) return;
+      const link = 'https://edera.dev' + href;
+      if (byUrl.has(link)) return; // already captured
+      const leftText = $item.find('.blog_item_left').text().trim();
+      // Title and date are concatenated: "TitleApril 8, 2026"
+      const dateMatch = leftText.match(/([A-Z][a-z]{2,8} \d{1,2},? \d{4})$/);
+      const title = dateMatch ? leftText.slice(0, dateMatch.index).trim() : leftText;
+      if (!title || title.length < 5) return;
+      const pubDate = dateMatch ? new Date(dateMatch[1] + ' 12:00:00') : null;
+      byUrl.set(link, { title, link, pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null, image: null, description: '' });
+    });
+
+    // Sort newest first
+    const items = [...byUrl.values()].sort((a, b) => {
+      if (a.pubDate && b.pubDate) return b.pubDate - a.pubDate;
+      if (a.pubDate) return -1;
+      if (b.pubDate) return 1;
+      return 0;
+    });
+
+    const rss = toRss(
+      'Edera Blog',
+      'https://edera.dev/stories',
+      'Edera - container security, Kubernetes isolation, and cloud-native infrastructure',
+      items
+    );
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Edera error: ' + (err.message || err));
+  }
+}
+
+// Dreadnode research — Tailwind-styled cards in a grid
+// Structure: <a href="/research/slug" class="bg-card border ...">
+//   <span class="...">Blog</span>
+//   <h2 class="font-mono text-base font-bold">Title</h2>
+//   <p class="font-mono text-xs text-dim">May 07, 2026</p>
+//   <p class="text-sm text-muted">Description...</p>
+//   <p class="text-xs text-dim">Author</p>
+// </a>
+async function handleDreadnode(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    const resp = await fetch('https://dreadnode.io/research/', { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'Accept': 'text/html',
+    } });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    const items = [];
+    const seen = new Set();
+    $('a[href^="/research/"]').each((_, el) => {
+      const $a = $(el);
+      const href = $a.attr('href');
+      if (!href || href === '/research/' || href === '/research' || seen.has(href)) return;
+      seen.add(href);
+
+      // Title from h2
+      const title = $a.find('h2').first().text().trim();
+      if (!title || title.length < 5) return;
+
+      // Category tag (Blog, Paper, Talk, Code)
+      const category = $a.find('span').first().text().trim();
+
+      // Date and description from <p> tags
+      let pubDate = null;
+      let description = '';
+      let author = '';
+      $a.find('p').each((_, p) => {
+        const t = $(p).text().trim();
+        // Date pattern: "May 07, 2026" or "Apr 15, 2026"
+        if (/^[A-Z][a-z]{2,8} \d{1,2},? \d{4}$/.test(t)) {
+          pubDate = new Date(t + ' 12:00:00');
+        } else if (t.length >= 30 && !description) {
+          // Longer text is the description
+          description = t;
+        } else if (t.length < 30 && t.length > 2 && !pubDate) {
+          // Short non-date text could be author
+          author = t;
+        }
+      });
+
+      items.push({
+        title,
+        link: 'https://dreadnode.io' + href,
+        pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null,
+        image: null,
+        description: description || (category ? `[${category}]` : ''),
+      });
+    });
+
+    const rss = toRss(
+      'Dreadnode Research',
+      'https://dreadnode.io/research/',
+      'Dreadnode - AI red teaming, agentic security, and offensive AI research',
+      items
+    );
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Dreadnode error: ' + (err.message || err));
   }
 }
