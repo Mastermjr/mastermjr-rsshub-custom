@@ -122,6 +122,12 @@ http.Server.prototype.emit = function(event, req, res) {
     return true;
   }
 
+  // Scythe — /scythe/threats and /scythe/blogs
+  if (url.startsWith('/scythe')) {
+    handleScythe(url, res);
+    return true;
+  }
+
   // Dreadnode research — /dreadnode
   if (url.startsWith('/dreadnode')) {
     handleDreadnode(url, res);
@@ -928,5 +934,121 @@ async function handleDreadnode(url, res) {
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' });
     res.end('Dreadnode error: ' + (err.message || err));
+  }
+}
+
+// Scythe — threat labs and blogs from sitemap + page title fetching
+// Routes: /scythe/threats (scythe-labs content), /scythe/blogs (library content), /scythe (both)
+// @decision DEC-SCYTHE-001
+// @title Use sitemap XML + parallel title fetching instead of JS rendering
+// @status accepted
+// @rationale Scythe uses HubSpot CMS which renders content via JS. The sitemap has all URLs + dates,
+//   and individual pages have clean <title> tags. Fetching ~30 titles in parallel is faster and more
+//   reliable than trying to render the JS-heavy resources page on Cloud Run (no Playwright available).
+async function handleScythe(url, res) {
+  try {
+    const params = new URL(url, 'http://localhost').searchParams;
+    const key = params.get('key') || '';
+    const expected = process.env.ACCESS_KEY || '';
+    if (expected && key !== expected) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.end('Access denied');
+      return;
+    }
+
+    // Determine which section: /scythe/threats, /scythe/blogs, or /scythe (both)
+    const pathPart = url.split('?')[0].replace(/\/$/, '');
+    const section = pathPart === '/scythe/threats' ? 'threats' : pathPart === '/scythe/blogs' ? 'blogs' : 'all';
+
+    // Fetch sitemap for URLs + dates
+    const sitemapResp = await fetch('https://scythe.io/sitemap.xml', { headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    } });
+    if (!sitemapResp.ok) throw new Error('Sitemap HTTP ' + sitemapResp.status);
+    const sitemapXml = await sitemapResp.text();
+
+    // Parse sitemap entries
+    const entries = [];
+    const urlBlocks = sitemapXml.match(/<url>([\s\S]*?)<\/url>/g) || [];
+    for (const block of urlBlocks) {
+      const locMatch = block.match(/<loc>([^<]+)<\/loc>/);
+      const modMatch = block.match(/<lastmod>([^<]+)<\/lastmod>/);
+      if (!locMatch) continue;
+      const pageUrl = locMatch[1];
+      const lastmod = modMatch ? modMatch[1] : '';
+      const isLabs = pageUrl.includes('/scythe-labs/');
+      const isLibrary = pageUrl.includes('/library/');
+      if (!isLabs && !isLibrary) continue;
+      if (section === 'threats' && !isLabs) continue;
+      if (section === 'blogs' && !isLibrary) continue;
+      entries.push({ url: pageUrl, date: lastmod, type: isLabs ? 'threat' : 'blog' });
+    }
+
+    // Sort by date descending
+    entries.sort((a, b) => b.date.localeCompare(a.date));
+
+    // Fetch titles in parallel for the newest 30 entries
+    const top = entries.slice(0, 30);
+    const titleResults = await Promise.allSettled(top.map(async (entry) => {
+      const resp = await fetch(entry.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) return null;
+      const html = await resp.text();
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      let title = titleMatch ? titleMatch[1].trim() : '';
+      // Strip common suffixes like " | SCYTHE" or " - SCYTHE"
+      title = title.replace(/\s*[|–-]\s*SCYTHE\s*$/i, '').trim();
+      // Also get meta description
+      const descMatch = html.match(/<meta\s+name=["']description["']\s+content=["']([^"']+)["']/i)
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+name=["']description["']/i);
+      const description = descMatch ? descMatch[1].trim().slice(0, 300) : '';
+      // OG image
+      const ogImgMatch = html.match(/<meta\s+property=["']og:image["']\s+content=["']([^"']+)["']/i)
+        || html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:image["']/i);
+      const image = ogImgMatch ? ogImgMatch[1].trim() : null;
+      return { title, description, image };
+    }));
+
+    const items = top.map((entry, i) => {
+      const result = titleResults[i];
+      let title = '', description = '', image = null;
+      if (result.status === 'fulfilled' && result.value) {
+        title = result.value.title;
+        description = result.value.description;
+        image = result.value.image;
+      }
+      // Fallback: generate title from slug
+      if (!title) {
+        const slug = entry.url.split('/').pop() || '';
+        title = slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      }
+      const pubDate = entry.date ? new Date(entry.date + 'T12:00:00Z') : null;
+      return {
+        title,
+        link: entry.url,
+        pubDate: (pubDate && !isNaN(pubDate)) ? pubDate : null,
+        image,
+        description: description || (entry.type === 'threat' ? '[Threat Intel]' : '[Blog]'),
+      };
+    });
+
+    const feedTitle = section === 'threats' ? 'SCYTHE Threat Labs'
+      : section === 'blogs' ? 'SCYTHE Blog'
+      : 'SCYTHE Resources';
+    const feedLink = 'https://scythe.io/resources';
+    const feedDesc = section === 'threats'
+      ? 'SCYTHE threat intelligence, adversary emulation, and MITRE ATT&CK research'
+      : section === 'blogs'
+      ? 'SCYTHE blog posts on cybersecurity, red teaming, and breach simulation'
+      : 'SCYTHE threat intelligence, blog posts, and security research';
+
+    const rss = toRss(feedTitle, feedLink, feedDesc, items);
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'max-age=1800' });
+    res.end(rss);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'text/plain' });
+    res.end('Scythe error: ' + (err.message || err));
   }
 }
